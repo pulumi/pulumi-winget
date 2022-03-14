@@ -4,16 +4,16 @@ on:
       - winget-deploy
 jobs:
   deploy:
-    name: Generate Pulumi Manifest for WinGet
-    runs-on: windows-latest
-    steps:
-    - uses: actions/checkout@v2
-    - uses: actions/setup-dotnet@v1
-      with:
-        dotnet-version: '6.0.x'
-    - run: dotnet run --project ./src
-    name: Push WinGet Manifest
-    shell: powershell
-    run: |
-      iwr https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
-      .\wingetcreate.exe submit -t $(GITHUB_TOKEN) ./src/manifest.yaml
+      runs-on: windows-latest
+      steps:
+      - name: Generate Pulumi Manifest for WinGet
+      - uses: actions/checkout@v2
+      - uses: actions/setup-dotnet@v1
+        with:
+          dotnet-version: '6.0.x'
+      - run: dotnet run --project ./src
+      - name: Push WinGet Manifest
+        shell: powershell
+        run: |
+          iwr https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
+          .\wingetcreate.exe submit -t $(GITHUB_TOKEN) ./src/manifest.yaml
