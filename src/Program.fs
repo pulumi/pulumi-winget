@@ -1,4 +1,5 @@
 ﻿open Octokit
+open System
 open System.IO
 open System.Net.Http
 open System.Threading.Tasks
@@ -77,7 +78,9 @@ let main (args: string[]) =
         
         | Ok windowsInstaller -> 
             let manifest = createManifest latestRelease windowsInstaller
-            File.WriteAllLines(path="./manifest.yaml", contents= manifest)
+            File.WriteAllLines(path="./manifest.yaml", contents=manifest)
+            printfn "Created Pulumi manifest file:"
+            manifest |> Seq.iter Console.WriteLine 
             0
     with 
     | error -> 
