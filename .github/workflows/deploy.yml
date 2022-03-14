@@ -8,10 +8,11 @@ jobs:
       steps:
       - name: Checkout code
         uses: actions/checkout@v2
-      - name: Generate Pulumi Manifest for WinGet
+      - name: Setup dotnet SDK
         uses: actions/setup-dotnet@v1
         with:
           dotnet-version: '6.0.x'
+      - name: Generate Pulumi manifest
         run: dotnet run --project ./src
       - name: Push WinGet Manifest
         shell: powershell
