@@ -17,5 +17,6 @@ jobs:
       - name: Push WinGet Manifest
         shell: powershell
         run: |
+          $github_token = "${{ secrets.GITHUB_TOKEN }}"
           iwr https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
-          .\wingetcreate.exe submit -t $(GITHUB_TOKEN) ./src/manifest.yaml
+          .\wingetcreate.exe submit -t $github_token ./src/manifest.yaml
