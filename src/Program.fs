@@ -171,7 +171,7 @@ let generateMsi() =
 
         printfn "Publishing asset to github..."
 
-        let releaseInfo = NewRelease($"Release {version latestRelease}")
+        let releaseInfo = NewRelease($"v{version latestRelease}")
         let release = await (github.Repository.Release.Create("pulumi", "pulumi-winget", releaseInfo))
         let releaseAsset = ReleaseAssetUpload()
         releaseAsset.FileName <- Path.GetFileName msi
@@ -211,7 +211,7 @@ let main (args: string[]) =
     | :? AggregateException as aggregateError when aggregateError.InnerExceptions.Count = 1 -> 
         match aggregateError.InnerExceptions[0] with 
         | :? Octokit.ApiException as githubError -> 
-            printfn "Error occured executing github operation::"
+            printfn "Error occured executing github operation:"
             printfn "%s" githubError.ApiError.Message
             for error in githubError.ApiError.Errors do
                 printfn "(%s) [%s]: %s" error.Code error.Field error.Message
