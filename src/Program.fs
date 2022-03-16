@@ -100,6 +100,17 @@ let generateMsi() =
         let wixDefinition = XDocument [
             Wix.root [
                 Wix.product (version latestRelease) [
+                    Wix.feature "MainInstaller" "Installer" [
+                        for file in filesFromUnzippedArchive do
+                        Wix.componentRef (fileId file)
+                    ]
+
+                    Wix.feature "UpdatePath" "Update PATH" [
+                        Wix.componentRef "SetEnvironment"
+                    ]
+                ]
+
+                Wix.fragment [
                     Wix.directory "TARGETDIR" "SourceDir" [
                         Wix.directoryId "ProgramFilesFolder" [
                             Wix.directory "PULUMIDIR" "Pulumi" []
@@ -116,15 +127,6 @@ let generateMsi() =
                             // Add install folder to PATH
                             Wix.updateEnvironmentPath "PULUMIDIR"
                         ]
-                    ]
-
-                    Wix.feature "MainInstaller" "Installer" [
-                        for file in filesFromUnzippedArchive do
-                        Wix.componentRef (fileId file)
-                    ]
-
-                    Wix.feature "UpdatePath" "Update PATH" [
-                        Wix.componentRef "SetEnvironment"
                     ]
                 ]
             ]
