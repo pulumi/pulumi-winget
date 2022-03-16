@@ -17,6 +17,8 @@ type XElement with
 
     static member create (name: string, [<ParamArray>] content) =
         XElement(XName.Get(name), content) :> obj
+    static member create (name: XName, [<ParamArray>] content) =
+        XElement(name, content) :> obj
     static member createWix (name: XNamespace, content: obj) =
         XElement(name.GetName("Wix"), content) :> obj
     static member createProduct (name: XNamespace, content: obj) =
@@ -35,20 +37,19 @@ let root (elements: obj seq) =
     })
 
 let product (version: string) (elements: obj seq) = 
-    XElement.createProduct(ns, seq {
+    XElement.create(ns + "Product", seq {
         XAttribute.create("Id", "*") 
         XAttribute.create("UpgradeCode", Guid.NewGuid().ToString())
         XAttribute.create("Version", version)
         XAttribute.create("Name", "Pulumi")
         XAttribute.create("Manufacturer", "Pulumi")
         XAttribute.create("Language", "1033")
-        XAttribute.create("xmlns", wixNamespace)
         for element in elements do 
             element
     })
 
 let directory (id: string) (name: string) (elements: obj seq) = 
-    XElement.create("Directory", seq {
+    XElement.create(ns + "Directory", seq {
         yield XAttribute.create("Id", id)
         yield XAttribute.create("Name", name)
         for element in elements do
@@ -56,21 +57,21 @@ let directory (id: string) (name: string) (elements: obj seq) =
     })
 
 let directoryId (id: string) (elements: obj seq) = 
-    XElement.create("Directory", seq {
+    XElement.create(ns + "Directory", seq {
         yield XAttribute.create("Id", id) |> box
         for element in elements do
             yield element |> box
     })
 
 let directoryRef (id: string) (elements: obj seq) = 
-    XElement.create("DirectoryRef", seq {
+    XElement.create(ns + "DirectoryRef", seq {
         yield XAttribute.create("Id", id) |> box
         for element in elements do
             yield element |> box
     })
 
 let component' (id: string) (elements: obj seq) = 
-    XElement.create("Component", seq {
+    XElement.create(ns + "Component", seq {
         yield XAttribute.create("Id", id) |> box
         yield XAttribute.create("Guid", Guid.NewGuid().ToString()) |> box
         for element in elements do
@@ -78,7 +79,7 @@ let component' (id: string) (elements: obj seq) =
     })
 
 let file (id: string) (source: string) = 
-    XElement.create("File", seq {
+    XElement.create(ns + "File", seq {
         XAttribute.create("Id", id)
         XAttribute.create("Source", source)
         XAttribute.create("KeyPath", "yes")
@@ -89,7 +90,7 @@ let file (id: string) (source: string) =
 let componentRef (id: string) = XElement.create("ComponentRef", XAttribute.create("Id", id))
 
 let feature (id: string) (title: string) (elements: obj seq) = 
-    XElement.create("Feature", seq {
+    XElement.create(ns + "Feature", seq {
         yield XAttribute.create("Id", id)
         yield XAttribute.create("Title", title)
         yield XAttribute.create("Level", "1")
@@ -99,7 +100,7 @@ let feature (id: string) (title: string) (elements: obj seq) =
 
 // https://stackoverflow.com/questions/11400748/unable-to-update-path-environment-variable-using-wix
 let updateEnvironmentPath (directoryRef: string) = 
-    XElement.create("Environment", 
+    XElement.create(ns + "Environment", 
         XAttribute.create("Id", "PATH"),
         XAttribute.create("Name", "PATH"),
         XAttribute.create("Value", $"[{directoryRef}]"),
