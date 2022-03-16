@@ -122,6 +122,7 @@ let generateMsi() =
 
                     Wix.media [ 
                         Wix.attr "Id" "1"
+                        Wix.attr "Cabinet" "1"
                     ]
 
                     Wix.directory "TARGETDIR" "SourceDir" [
