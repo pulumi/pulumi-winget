@@ -208,6 +208,19 @@ let main (args: string[]) =
             printfn "Unknown arguments provided: %A" otherwise
             0
     with 
+    | :? AggregateException as aggregateError when aggregateError.InnerExceptions.Count = 1 -> 
+        match aggregateError.InnerExceptions[0] with 
+        | :? Octokit.ApiException as githubError -> 
+            printfn "Error occured executing github operation::"
+            printfn "%s" githubError.ApiError.Message
+            for error in githubError.ApiError.Errors do
+                printfn "(%s) [%s]: %s" error.Code error.Field error.Message
+            1
+        
+        | error -> 
+            printfn "Error occured while creating the manifest file for pulumi CLI:"
+            printfn "%s" error.Message
+            1
     | :? AggregateException as aggregateError -> 
         printfn "Errors occured while creating the manifest file for pulumi CLI:"
         for error in aggregateError.InnerExceptions do 
