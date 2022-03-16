@@ -47,24 +47,23 @@ let findWindowsInstaller (release: Release) : Result<InstallerAsset, string> =
                     Sha256 = sha265
                 }
 
-let createManifest (release: Release) (installer: InstallerAsset)= 
-    let lines = ResizeArray()
-    lines.Add $"PackageIdentifier: Pulumi.Pulumi"
-    lines.Add $"PackageName: Pulumi"
-    lines.Add $"PackageVersion: {version release}"
-    lines.Add $"License: Apache License 2.0"
-    lines.Add $"LicenseUrl: https://github.com/pulumi/pulumi/blob/master/LICENSE"
-    lines.Add $"ShortDescription: Pulumi CLI for managing modern infrastructure as code"
-    lines.Add $"PackageUrl: https://www.pulumi.com"
-    lines.Add $"InstallerType: zip"
-    lines.Add $"Installers:"
-    lines.Add $"- Architecture: x64"
-    lines.Add $"  InstallerUrl: {installer.DownloadUrl}"
-    lines.Add $"  InstallerSha256: {installer.Sha256}"
-    lines.Add "PackageLocale: en-US"
-    lines.Add "ManifestType: singleton"
-    lines.Add "ManifestVersion: 1.0.0"
-    Array.ofSeq lines
+let createManifest (release: Release) (installer: InstallerAsset) = [|
+    $"PackageIdentifier: Pulumi.Pulumi"
+    $"PackageName: Pulumi"
+    $"PackageVersion: {version release}"
+    $"License: Apache License 2.0"
+    $"LicenseUrl: https://github.com/pulumi/pulumi/blob/master/LICENSE"
+    $"ShortDescription: Pulumi CLI for managing modern infrastructure as code"
+    $"PackageUrl: https://www.pulumi.com"
+    $"Installers:"
+    $"- Architecture: x64"
+    $"  InstallerUrl: {installer.DownloadUrl}"
+    $"  InstallerSha256: {installer.Sha256}"
+    $"  InstallerType: zip"
+    "PackageLocale: en-US"
+    "ManifestType: singleton"
+    "ManifestVersion: 1.0.0"
+|]
 
 [<EntryPoint>]
 let main (args: string[]) = 
@@ -78,7 +77,8 @@ let main (args: string[]) =
         
         | Ok windowsInstaller -> 
             let manifest = createManifest latestRelease windowsInstaller
-            File.WriteAllLines(path="./manifest.yaml", contents=manifest)
+            let output = Path.Combine(__SOURCE_DIRECTORY__, "manifest.yaml")
+            File.WriteAllLines(path=output, contents=manifest)
             printfn "Created Pulumi manifest file:"
             manifest |> Seq.iter Console.WriteLine 
             0
