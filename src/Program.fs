@@ -96,20 +96,29 @@ let generateMsi() =
                 Wix.product (version latestRelease) [
                     Wix.directory "TARGETDIR" "SourceDir" [
                         Wix.directoryId "ProgramFilesFolder" [
-                            Wix.directory "APPLICATIONROOTDIRECTORY" "Pulumi" []
+                            Wix.directory "PULUMIDIR" "Pulumi" []
                         ]
                     ]
 
-                    Wix.directoryRef "APPLICATIONROOTDIRECTORY" [
+                    Wix.directoryRef "PULUMIDIR" [
                         for file in filesFromUnzippedArchive do
-                        Wix.component' (Path.GetFileName file) [
-                            Wix.file (Path.GetFileName file) file
+                            Wix.component' (Path.GetFileName file) [
+                                Wix.file (Path.GetFileName file) file
+                            ]
+
+                        Wix.component' "SetEnvironment" [
+                            // Add install folder to PATH
+                            Wix.updateEnvironmentPath "PULUMIDIR"
                         ]
                     ]
 
                     Wix.feature "MainInstaller" "Installer" [
                         for file in filesFromUnzippedArchive do
                         Wix.componentRef (Path.GetFileName file)
+                    ]
+
+                    Wix.feature "UpdatePath" "Update PATH" [
+                        Wix.componentRef "SetEnvironment"
                     ]
                 ]
             ]

@@ -90,3 +90,14 @@ let feature (id: string) (title: string) (elements: obj seq) =
         for element in elements do
             yield element
     })
+
+// https://stackoverflow.com/questions/11400748/unable-to-update-path-environment-variable-using-wix
+let updateEnvironmentPath (directoryRef: string) = 
+    XElement.create("Environment", 
+        XAttribute.create("Id", "PATH"),
+        XAttribute.create("Name", "PATH"),
+        XAttribute.create("Value", $"[{directoryRef}]"),
+        XAttribute.create("Permanent", "yes"),
+        XAttribute.create("Part", "last"),
+        XAttribute.create("Action", "set"),
+        XAttribute.create("System", "yes"))

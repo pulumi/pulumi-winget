@@ -19,5 +19,20 @@ jobs:
         shell: powershell
         run: |
           choco install wixtoolset
-      - name: Generate Pulumi MSI
+      - name: Set path for candle and light
+        env:
+          WIX_PATH: ${{ env.wix }}
+        shell: powershell
+        run: |
+          echo "$env:WIX_PATH\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      - name: Generate Pulumi MSI Definition
         run: dotnet run --project ./src -- generate msi
+      - name: Generate final MSI
+        shell: powershell
+        run: | 
+          Set-Location -Path ./src
+          candle.exe PulumiInstaller.wxs
+          light.exe PulumiInstaller.wixobj -o Pulumi.msi
+          dir
+
+
