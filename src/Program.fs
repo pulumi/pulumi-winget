@@ -106,6 +106,11 @@ let generateMsi() =
                     Wix.package [ 
                         Wix.attr "Platform" "x64"
                         Wix.attr "Description" "Pulumi CLI for managing cloud infrastructure"
+                        Wix.attr "InstallerVersion" "200"
+                    ]
+
+                    Wix.media [ 
+                        Wix.attr "Id" "1"
                     ]
 
                     Wix.directory "TARGETDIR" "SourceDir" [
