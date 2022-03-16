@@ -19,27 +19,32 @@ type XElement with
         XElement(XName.Get(name), content) :> obj
     static member createWix (name: XNamespace, content: obj) =
         XElement(name.GetName("Wix"), content) :> obj
+    static member createProduct (name: XNamespace, content: obj) =
+        XElement(name.GetName("Product"), content) :> obj
 
 
+
+let wixNamespace = "http://schemas.microsoft.com/wix/2006/wi"
+let ns = XNamespace.op_Implicit(wixNamespace)
 
 let root (elements: obj seq) = 
-    let ns = XNamespace.op_Implicit("http://schemas.microsoft.com/wix/2006/wi")
     XElement.createWix(ns, seq {
-        yield  XAttribute.create("xmlns", "http://schemas.microsoft.com/wix/2006/wi")
+        yield  XAttribute.create("xmlns", wixNamespace)
         for element in elements do 
             yield element
     })
 
 let product (version: string) (elements: obj seq) = 
-    XElement.create("Product", [|
+    XElement.createProduct(ns, seq {
         XAttribute.create("Id", "*") 
         XAttribute.create("UpgradeCode", Guid.NewGuid().ToString())
         XAttribute.create("Version", version)
         XAttribute.create("Name", "Pulumi")
         XAttribute.create("Manufacturer", "Pulumi")
+        XAttribute.create("xmlns", wixNamespace)
         for element in elements do 
             element
-    |])
+    })
 
 let directory (id: string) (name: string) (elements: obj seq) = 
     XElement.create("Directory", seq {
