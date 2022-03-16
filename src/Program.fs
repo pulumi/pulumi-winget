@@ -137,7 +137,7 @@ let generateMsi() =
 
                     Wix.directoryRef "PULUMIDIR" [
                         for file in filesFromUnzippedArchive do
-                            Wix.component' (fileId file) [
+                            Wix.component' $"component_{fileId file}" [
                                 Wix.file (fileId file) file
                             ]
 
@@ -150,7 +150,7 @@ let generateMsi() =
 
                     Wix.feature "MainInstaller" "Installer" [
                         for file in filesFromUnzippedArchive do
-                        Wix.componentRef (fileId file)
+                        Wix.componentRef $"component_{fileId file}"
                     ]
 
                     Wix.feature "UpdatePath" "Update PATH" [
