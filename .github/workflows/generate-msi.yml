@@ -25,6 +25,7 @@ jobs:
         shell: powershell
         run: |
           echo "$env:WIX_PATH\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          Get-ChildItem -Path $env:WIX_PATH\bin | Format-Table
       - name: Generate Pulumi MSI Definition
         run: dotnet run --project ./src -- generate msi
       - name: Generate final MSI
