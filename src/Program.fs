@@ -120,11 +120,13 @@ let generateMsi() =
                         Wix.attr "Compressed" "yes"
                     ]
 
-                    Wix.media [ 
-                        Wix.attr "Id" "1"
-                        Wix.attr "Cabinet" "1"
-                        Wix.attr "EmbedCab" "yes"
-                    ]
+                    // Wix.media [ 
+                    //    Wix.attr "Id" "1"
+                    //    Wix.attr "Cabinet" "1"
+                    //    Wix.attr "EmbedCab" "yes"
+                    // ]
+
+                    Wix.mediaTemplate [ Wix.attr "EmbedCab" "yes" ]
 
                     Wix.directory "TARGETDIR" "SourceDir" [
                         Wix.directoryId "ProgramFilesFolder" [
