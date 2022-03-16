@@ -91,6 +91,12 @@ let generateMsi() =
         
         let filesFromUnzippedArchive = Directory.EnumerateFiles (resolvePath [ "pulumi"; "pulumi"; "bin" ])
 
+        let fileId (filePath: string) = 
+            let fileName = Path.GetFileName filePath
+            // dashes are illegal in WiX files
+            // Identifiers may contain ASCII characters A-Z, a-z, digits, underscores (_), or periods (.).  Every identifier must begin with either a letter or an underscore.
+            fileName.Replace("-", "_")
+
         let wixDefinition = XDocument [
             Wix.root [
                 Wix.product (version latestRelease) [
@@ -102,7 +108,7 @@ let generateMsi() =
 
                     Wix.directoryRef "PULUMIDIR" [
                         for file in filesFromUnzippedArchive do
-                            Wix.component' (Path.GetFileName file) [
+                            Wix.component' (fileId file) [
                                 Wix.file (Path.GetFileName file) file
                             ]
 
@@ -114,7 +120,7 @@ let generateMsi() =
 
                     Wix.feature "MainInstaller" "Installer" [
                         for file in filesFromUnzippedArchive do
-                        Wix.componentRef (Path.GetFileName file)
+                        Wix.componentRef (fileId file)
                     ]
 
                     Wix.feature "UpdatePath" "Update PATH" [

@@ -87,7 +87,7 @@ let file (id: string) (source: string) =
             XAttribute.create("Checksum", "yes")
     })
 
-let componentRef (id: string) = XElement.create("ComponentRef", XAttribute.create("Id", id))
+let componentRef (id: string) = XElement.create(ns + "ComponentRef", XAttribute.create("Id", id))
 
 let feature (id: string) (title: string) (elements: obj seq) = 
     XElement.create(ns + "Feature", seq {
