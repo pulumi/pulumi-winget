@@ -184,7 +184,7 @@ let generateMsi() =
         match latestMsiRelease() with 
         | Some msiRelease when version msiRelease = version latestRelease -> 
             printfn "Version v%s of Pulumi MSI is already published, skipping..." (version msiRelease)
-            0
+            1
 
         | _ ->
             printfn "Publishing asset to github..."
