@@ -109,7 +109,7 @@ let generateMsi() =
                     Wix.directoryRef "PULUMIDIR" [
                         for file in filesFromUnzippedArchive do
                             Wix.component' (fileId file) [
-                                Wix.file (Path.GetFileName file) file
+                                Wix.file (fileId file) file
                             ]
 
                         Wix.component' "SetEnvironment" [
