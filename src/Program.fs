@@ -167,6 +167,10 @@ let generateMsi() =
 
         let msi = resolvePath [ "Pulumi.msi" ]
 
+        printfn "Succesfully created MSI at '%s'" msi
+
+        printfn "Publishing asset to github..."
+
         let releaseInfo = NewRelease($"Release {version latestRelease}")
         let release = await (github.Repository.Release.Create("pulumi", "pulumi-winget", releaseInfo))
         let releaseAsset = ReleaseAssetUpload()
@@ -204,6 +208,13 @@ let main (args: string[]) =
             printfn "Unknown arguments provided: %A" otherwise
             0
     with 
+    | :? AggregateException as aggregateError -> 
+        printfn "Errors occured while creating the manifest file for pulumi CLI:"
+        for error in aggregateError.InnerExceptions do 
+            printfn "%s" error.Message
+        
+        printfn "%s" aggregateError.StackTrace
+        1
     | error -> 
         printfn "Error occured while creating the manifest file for pulumi CLI:"
         printfn "%s" error.Message
