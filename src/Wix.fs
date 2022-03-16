@@ -41,6 +41,7 @@ let product (version: string) (elements: obj seq) =
         XAttribute.create("Version", version)
         XAttribute.create("Name", "Pulumi")
         XAttribute.create("Manufacturer", "Pulumi")
+        XAttribute.create("Language", "1033")
         XAttribute.create("xmlns", wixNamespace)
         for element in elements do 
             element
