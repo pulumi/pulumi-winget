@@ -117,6 +117,7 @@ let generateMsi() =
                         Wix.attr "Platform" "x64"
                         Wix.attr "Description" "Pulumi CLI for managing cloud infrastructure"
                         Wix.attr "InstallerVersion" "200"
+                        Wix.attr "Compressed" "yes"
                     ]
 
                     Wix.media [ 
