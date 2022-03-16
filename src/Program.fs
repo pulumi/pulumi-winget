@@ -201,7 +201,7 @@ let generateMsi() =
             printfn $"Released {version latestRelease}: {uploadResult.BrowserDownloadUrl}"
             let installerAsset = {
                 DownloadUrl = uploadResult.BrowserDownloadUrl
-                Sha256 = Convert.ToBase64String sha256
+                Sha256 = BitConverter.ToString(sha256).Replace("-", "")
             }
 
             let manifest = createManifest (version latestRelease) installerAsset
