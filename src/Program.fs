@@ -249,6 +249,7 @@ let main (args: string[]) =
         | error -> 
             printfn "Error occured while creating the manifest file for pulumi CLI:"
             printfn "%s" error.Message
+            printfn "%s" error.StackTrace
             1
     | :? AggregateException as aggregateError -> 
         printfn "Errors occured while creating the manifest file for pulumi CLI:"
@@ -260,4 +261,5 @@ let main (args: string[]) =
     | error -> 
         printfn "Error occured while creating the manifest file for pulumi CLI:"
         printfn "%s" error.Message
+        printfn "%s" error.StackTrace
         1
