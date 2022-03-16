@@ -165,11 +165,13 @@ let generateMsi() =
         System.Console.WriteLine(File.ReadAllText wixOutput)
 
         Shell.exec("candle.exe", "PulumiInstaller.wxs")
-        Shell.exec("light.exe", "PulumiInstaller.wixobj -o Pulumi.msi")
+        Shell.exec("light.exe", $"PulumiInstaller.wixobj -o pulumi-{version latestRelease}-windows-x64.msi")
 
-        let msi = resolvePath [ "Pulumi.msi" ]
+        let msi = resolvePath [ $"pulumi-{version latestRelease}-windows-x64.msi" ]
 
-        printfn "Succesfully created MSI at '%s'" msi
+        let info = FileInfo msi
+
+        printfn "Succesfully created MSI at '%s' (%d bytes)" msi info.Length
 
         printfn "Publishing asset to github..."
 
