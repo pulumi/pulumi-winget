@@ -76,6 +76,14 @@ let fragment (elements: obj seq) =
             yield element |> box
     })
 
+let attr key (value: string) = XAttribute.create(key, value)
+
+let package (elements: obj seq) = 
+    XElement.create(ns + "Package", seq {
+        for element in elements do
+            yield element |> box
+    })
+
 let component' (id: string) (elements: obj seq) = 
     XElement.create(ns + "Component", seq {
         yield XAttribute.create("Id", id) |> box

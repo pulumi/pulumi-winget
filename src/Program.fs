@@ -97,20 +97,17 @@ let generateMsi() =
             // Identifiers may contain ASCII characters A-Z, a-z, digits, underscores (_), or periods (.).  Every identifier must begin with either a letter or an underscore.
             fileName.Replace("-", "_")
 
+        // Schema of allowed elements
+        // https://wixtoolset.org/documentation/manual/v3/xsd/wix/wix.html
         let wixDefinition = XDocument [
             Wix.root [
                 Wix.product (version latestRelease) [
-                    Wix.feature "MainInstaller" "Installer" [
-                        for file in filesFromUnzippedArchive do
-                        Wix.componentRef (fileId file)
+                    
+                    Wix.package [ 
+                        Wix.attr "Platform" "x64"
+                        Wix.attr "Description" "Pulumi CLI for managing cloud infrastructure"
                     ]
 
-                    Wix.feature "UpdatePath" "Update PATH" [
-                        Wix.componentRef "SetEnvironment"
-                    ]
-                ]
-
-                Wix.fragment [
                     Wix.directory "TARGETDIR" "SourceDir" [
                         Wix.directoryId "ProgramFilesFolder" [
                             Wix.directory "PULUMIDIR" "Pulumi" []
@@ -127,6 +124,15 @@ let generateMsi() =
                             // Add install folder to PATH
                             Wix.updateEnvironmentPath "PULUMIDIR"
                         ]
+                    ]
+
+                    Wix.feature "MainInstaller" "Installer" [
+                        for file in filesFromUnzippedArchive do
+                        Wix.componentRef (fileId file)
+                    ]
+
+                    Wix.feature "UpdatePath" "Update PATH" [
+                        Wix.componentRef "SetEnvironment"
                     ]
                 ]
             ]
