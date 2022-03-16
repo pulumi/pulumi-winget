@@ -12,6 +12,8 @@
 
   <ItemGroup>
     <PackageReference Include="Octokit" Version="0.50.0" />
+    <PackageReference Include="Fake.Core.Environment" Version="5.20.4" />
+    <PackageReference Include="Fake.Core.Target" Version="5.20.4" />
   </ItemGroup>
 
 </Project>

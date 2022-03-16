@@ -15,21 +15,8 @@ jobs:
         uses: actions/setup-dotnet@v1
         with:
           dotnet-version: '6.0.x'
-      - name: Install WixTools
-        shell: powershell
-        run: |
-          choco install wixtoolset
-      - name: Set path for candle and light
+      - name: Set path for candle and light from WixTools
         run: echo "C:\Program Files (x86)\WiX Toolset v3.11\bin" >> $GITHUB_PATH
         shell: bash
-      - name: Show Github path
-        run: echo $GITHUB_PATH
-      - name: Generate Pulumi MSI Definition
+      - name: Generate Pulumi MSI
         run: dotnet run --project ./src -- generate msi
-      - name: Generate final MSI
-        shell: powershell
-        run: | 
-          Set-Location -Path ./src
-          candle.exe PulumiInstaller.wxs
-          light.exe PulumiInstaller.wixobj -o Pulumi.msi
-          dir

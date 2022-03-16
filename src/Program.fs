@@ -5,6 +5,7 @@ open System.IO.Compression
 open System.Net.Http
 open System.Threading.Tasks
 open System.Xml.Linq
+open Fake.Core
 
 let inline await (task: Task<'t>) = 
     task
@@ -15,6 +16,7 @@ let httpClient = new HttpClient()
 httpClient.DefaultRequestHeaders.UserAgent.Add(Headers.ProductInfoHeaderValue("PulumiBot", "1.0"))
 
 let github = new GitHubClient(ProductHeaderValue "PulumiBot")
+github.Credentials <- Credentials(Environment.GetEnvironmentVariable "GITHUB_TOKEN")
 
 let version (release: Release) = release.Name.Substring(1, release.Name.Length - 1)
 
@@ -67,10 +69,18 @@ let createManifest (release: Release) (installer: InstallerAsset) = [|
     "ManifestVersion: 1.0.0"
 |]
 
+let cwd = __SOURCE_DIRECTORY__
+
 let resolvePath (relativePaths: string list) =  Path.Combine [| 
-    yield __SOURCE_DIRECTORY__
+    yield cwd
     yield! relativePaths
 |]
+
+type Shell with 
+    static member exec(cmd: string, args: string) = 
+        let exitCode = Shell.Exec(cmd, args, cwd)
+        if exitCode <> 0
+        then failwithf "Failed to execute '%s %s'" cmd args
 
 let generateMsi() = 
     let latestRelease = await (github.Repository.Release.GetLatest("pulumi", "pulumi"))
@@ -151,6 +161,21 @@ let generateMsi() =
         printfn "Written WixInstaller definition:"
 
         System.Console.WriteLine(File.ReadAllText wixOutput)
+
+        Shell.exec("candle.exe", "PulumiInstaller.wxs")
+        Shell.exec("light.exe", "PulumiInstaller.wixobj -o Pulumi.msi")
+
+        let msi = resolvePath [ "Pulumi.msi" ]
+
+        let releaseInfo = NewRelease($"Release {version latestRelease}")
+        let release = await (github.Repository.Release.Create("pulumi", "pulumi-winget", releaseInfo))
+        let releaseAsset = ReleaseAssetUpload()
+        releaseAsset.FileName <- Path.GetFileName msi
+        releaseAsset.ContentType <- "application/msi"
+        releaseAsset.RawData <- File.OpenRead(msi)
+
+        let uploadResult = await (github.Repository.Release.UploadAsset(release, releaseAsset))
+        printfn $"Released {version latestRelease}: {uploadResult.BrowserDownloadUrl}"
         0
 
 let generateManifest() = 
