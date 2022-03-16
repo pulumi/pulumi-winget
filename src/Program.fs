@@ -125,6 +125,10 @@ let generateMsi() =
                         Wix.attr "Cabinet" "1"
                     ]
 
+                    Wix.mediaTemplate [
+                        Wix.attr "EmbedCab" "yes"
+                    ]
+
                     Wix.directory "TARGETDIR" "SourceDir" [
                         Wix.directoryId "ProgramFilesFolder" [
                             Wix.directory "PULUMIDIR" "Pulumi" []

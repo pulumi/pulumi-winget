@@ -92,6 +92,12 @@ let media (elements: obj seq) =
             yield element |> box
     })
 
+let mediaTemplate (elements: obj seq) = 
+    XElement.create(ns + "MediaTemplate", seq {
+        for element in elements do
+            yield element |> box
+    })
+
 let component' (id: string) (elements: obj seq) = 
     XElement.create(ns + "Component", seq {
         yield XAttribute.create("Id", id) |> box
