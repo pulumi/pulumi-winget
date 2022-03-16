@@ -1,8 +1,10 @@
 ﻿open Octokit
 open System
 open System.IO
+open System.IO.Compression
 open System.Net.Http
 open System.Threading.Tasks
+open System.Xml.Linq
 
 let inline await (task: Task<'t>) = 
     task
@@ -65,22 +67,87 @@ let createManifest (release: Release) (installer: InstallerAsset) = [|
     "ManifestVersion: 1.0.0"
 |]
 
+let resolvePath (relativePaths: string list) =  Path.Combine [| 
+    yield __SOURCE_DIRECTORY__
+    yield! relativePaths
+|]
+
+let generateMsi() = 
+    let latestRelease = await (github.Repository.Release.GetLatest("pulumi", "pulumi"))
+    match findWindowsInstaller latestRelease with 
+    | Error errorMessage -> 
+        printfn "Error occured while creating the manifest file for pulumi CLI:"
+        printfn "%s" errorMessage
+        1
+        
+    | Ok windowsInstaller -> 
+        // Download ZIP file
+        let pulumiZip = await (httpClient.GetByteArrayAsync(windowsInstaller.DownloadUrl))
+        let pulumiZipOutput = resolvePath [ "pulumi.zip" ]
+        File.WriteAllBytes(pulumiZipOutput, pulumiZip)
+        // Unzip into ./pulumi
+        let pulumiUnzipped = resolvePath [ "pulumi" ]
+        ZipFile.ExtractToDirectory(pulumiZipOutput, pulumiUnzipped)
+        
+        let filesFromUnzippedArchive = Directory.EnumerateFiles (resolvePath [ "pulumi"; "pulumi"; "bin" ])
+
+        let wixDefinition = XDocument [
+            Wix.root [
+                Wix.product (version latestRelease) [
+                    Wix.directory "TARGETDIR" "SourceDir" [
+                        Wix.directoryId "ProgramFilesFolder" [
+                            Wix.directory "APPLICATIONROOTDIRECTORY" "Pulumi" []
+                        ]
+                    ]
+
+                    Wix.directoryRef "APPLICATIONROOTDIRECTORY" [
+                        for file in filesFromUnzippedArchive do
+                        Wix.component' (Path.GetFileName file) [
+                            Wix.file (Path.GetFileName file) file
+                        ]
+                    ]
+
+                    Wix.feature "MainInstaller" "Installer" [
+                        for file in filesFromUnzippedArchive do
+                        Wix.componentRef (Path.GetFileName file)
+                    ]
+                ]
+            ]
+        ]
+
+        let wixOutput = resolvePath [ "PulumiInstaller.wxs" ]
+
+        wixDefinition.Save wixOutput
+
+        printfn "Written WixInstaller definition:"
+
+        System.Console.WriteLine(File.ReadAllText wixOutput)
+        0
+
+let generateManifest() = 
+    let latestRelease = await (github.Repository.Release.GetLatest("pulumi", "pulumi"))
+    match findWindowsInstaller latestRelease with 
+    | Error errorMessage -> 
+        printfn "Error occured while creating the manifest file for pulumi CLI:"
+        printfn "%s" errorMessage
+        1
+        
+    | Ok windowsInstaller -> 
+        let manifest = createManifest latestRelease windowsInstaller
+        let manifestOutput = resolvePath [ "manifest.yaml" ]
+        File.WriteAllLines(path=manifestOutput, contents=manifest)
+        printfn "Created Pulumi manifest file:"
+        manifest |> Seq.iter Console.WriteLine 
+        0
+
 [<EntryPoint>]
 let main (args: string[]) = 
     try
-        let latestRelease = await (github.Repository.Release.GetLatest("pulumi", "pulumi"))
-        match findWindowsInstaller latestRelease with 
-        | Error errorMessage -> 
-            printfn "Error occured while creating the manifest file for pulumi CLI:"
-            printfn "%s" errorMessage
-            1
-        
-        | Ok windowsInstaller -> 
-            let manifest = createManifest latestRelease windowsInstaller
-            let output = Path.Combine(__SOURCE_DIRECTORY__, "manifest.yaml")
-            File.WriteAllLines(path=output, contents=manifest)
-            printfn "Created Pulumi manifest file:"
-            manifest |> Seq.iter Console.WriteLine 
+        match args with 
+        | [| "generate"; "msi" |] -> generateMsi()
+        | [| "generate"; "manifest" |] -> generateManifest()
+        | otherwise -> 
+            printfn "Unknown arguments provided: %A" otherwise
             0
     with 
     | error -> 

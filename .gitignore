@@ -436,7 +436,8 @@ $RECYCLE.BIN/
 *.msix
 *.msm
 *.msp
-
+pulumi
+pulumi.zip
 # Windows shortcuts
 *.lnk
 
