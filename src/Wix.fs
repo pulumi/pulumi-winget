@@ -110,7 +110,6 @@ let file (id: string) (source: string) =
     XElement.create(ns + "File", seq {
         XAttribute.create("Id", id)
         XAttribute.create("Source", source)
-        XAttribute.create("Compressed", "yes")
         XAttribute.create("KeyPath", "yes")
         if (source.EndsWith ".exe") then
             XAttribute.create("Checksum", "yes")
