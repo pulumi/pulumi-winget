@@ -52,10 +52,10 @@ let findWindowsInstaller (release: Release) : Result<InstallerAsset, string> =
                     Sha256 = sha265
                 }
 
-let createManifest (release: Release) (installer: InstallerAsset) = [|
+let createManifest (version: string) (installer: InstallerAsset) = [|
     $"PackageIdentifier: Pulumi.Pulumi"
     $"PackageName: Pulumi"
-    $"PackageVersion: {version release}"
+    $"PackageVersion: {version}"
     $"License: Apache License 2.0"
     $"LicenseUrl: https://github.com/pulumi/pulumi/blob/master/LICENSE"
     $"ShortDescription: Pulumi CLI for managing modern infrastructure as code"
@@ -204,35 +204,19 @@ let generateMsi() =
                 Sha256 = Convert.ToBase64String sha256
             }
 
-            let manifest = createManifest msiRelease installerAsset
+            let manifest = createManifest (version latestRelease) installerAsset
             let manifestOutput = resolvePath [ "manifest.yaml" ]
             File.WriteAllLines(path=manifestOutput, contents=manifest)
             printfn "Created Pulumi/Winget manifest file:"
             manifest |> Seq.iter Console.WriteLine 
             0
 
-let generateManifest() = 
-    let latestRelease = await (github.Repository.Release.GetLatest("pulumi", "pulumi"))
-    match findWindowsInstaller latestRelease with 
-    | Error errorMessage -> 
-        printfn "Error occured while creating the manifest file for pulumi CLI:"
-        printfn "%s" errorMessage
-        1
-        
-    | Ok windowsInstaller -> 
-        let manifest = createManifest latestRelease windowsInstaller
-        let manifestOutput = resolvePath [ "manifest.yaml" ]
-        File.WriteAllLines(path=manifestOutput, contents=manifest)
-        printfn "Created Pulumi manifest file:"
-        manifest |> Seq.iter Console.WriteLine 
-        0
 
 [<EntryPoint>]
 let main (args: string[]) = 
     try
         match args with 
         | [| "generate"; "msi" |] -> generateMsi()
-        | [| "generate"; "manifest" |] -> generateManifest()
         | otherwise -> 
             printfn "Unknown arguments provided: %A" otherwise
             0
