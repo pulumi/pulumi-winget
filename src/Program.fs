@@ -126,6 +126,7 @@ let generateMsi() =
                             ]
 
                         Wix.component' "SetEnvironment" [
+                            Wix.createFolder()
                             // Add install folder to PATH
                             Wix.updateEnvironmentPath "PULUMIDIR"
                         ]

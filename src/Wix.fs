@@ -84,6 +84,8 @@ let package (elements: obj seq) =
             yield element |> box
     })
 
+let createFolder() = XElement.create(ns + "CreateFolder")
+
 let media (elements: obj seq) = 
     XElement.create(ns + "Media", seq {
         for element in elements do
