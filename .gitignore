@@ -438,6 +438,7 @@ $RECYCLE.BIN/
 *.msp
 pulumi
 pulumi.zip
+PulumiInstaller.wxs
 # Windows shortcuts
 *.lnk
 
