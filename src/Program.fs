@@ -6,6 +6,7 @@ open System.Net.Http
 open System.Threading.Tasks
 open System.Xml.Linq
 open Fake.Core
+open System.Security.Cryptography
 
 let inline await (task: Task<'t>) = 
     task
@@ -63,7 +64,7 @@ let createManifest (release: Release) (installer: InstallerAsset) = [|
     $"- Architecture: x64"
     $"  InstallerUrl: {installer.DownloadUrl}"
     $"  InstallerSha256: {installer.Sha256}"
-    $"  InstallerType: zip"
+    $"  InstallerType: msi"
     "PackageLocale: en-US"
     "ManifestType: singleton"
     "ManifestVersion: 1.0.0"
@@ -82,6 +83,16 @@ type Shell with
         if exitCode <> 0
         then failwithf "Failed to execute '%s %s'" cmd args
 
+let latestMsiRelease() = 
+    let releases = await (github.Repository.Release.GetAll("pulumi", "pulumi-winget"))
+    if releases.Count = 0 then 
+        None
+    else 
+        releases
+        |> Seq.maxBy (fun release -> release.CreatedAt)
+        |> Some
+
+
 let generateMsi() = 
     let latestRelease = await (github.Repository.Release.GetLatest("pulumi", "pulumi"))
     match findWindowsInstaller latestRelease with 
@@ -89,7 +100,7 @@ let generateMsi() =
         printfn "Error occured while creating the manifest file for pulumi CLI:"
         printfn "%s" errorMessage
         1
-        
+
     | Ok windowsInstaller -> 
         // Download ZIP file
         let pulumiZip = await (httpClient.GetByteArrayAsync(windowsInstaller.DownloadUrl))
@@ -170,18 +181,35 @@ let generateMsi() =
 
         printfn "Succesfully created MSI at '%s' (%d bytes)" msi info.Length
 
-        printfn "Publishing asset to github..."
+        match latestMsiRelease() with 
+        | Some msiRelease when version msiRelease = version latestRelease -> 
+            printfn "Version v%s of Pulumi MSI is already published, skipping..." (version msiRelease)
+            0
 
-        let releaseInfo = NewRelease($"v{version latestRelease}")
-        let release = await (github.Repository.Release.Create("pulumi", "pulumi-winget", releaseInfo))
-        let releaseAsset = ReleaseAssetUpload()
-        releaseAsset.FileName <- Path.GetFileName msi
-        releaseAsset.ContentType <- "application/msi"
-        releaseAsset.RawData <- File.OpenRead(msi)
+        | _ ->
+            printfn "Publishing asset to github..."
+            let sha256Algo = HashAlgorithm.Create("SHA256")
+            let sha256 = sha256Algo.ComputeHash(new MemoryStream(File.ReadAllBytes msi))
+            let releaseInfo = NewRelease($"v{version latestRelease}")
+            let msiRelease = await (github.Repository.Release.Create("pulumi", "pulumi-winget", releaseInfo))
+            let releaseAsset = ReleaseAssetUpload()
+            releaseAsset.FileName <- Path.GetFileName msi
+            releaseAsset.ContentType <- "application/msi"
+            releaseAsset.RawData <- File.OpenRead(msi)
 
-        let uploadResult = await (github.Repository.Release.UploadAsset(release, releaseAsset))
-        printfn $"Released {version latestRelease}: {uploadResult.BrowserDownloadUrl}"
-        0
+            let uploadResult = await (github.Repository.Release.UploadAsset(msiRelease, releaseAsset))
+            printfn $"Released {version latestRelease}: {uploadResult.BrowserDownloadUrl}"
+            let installerAsset = {
+                DownloadUrl = uploadResult.BrowserDownloadUrl
+                Sha256 = Convert.ToBase64String sha256
+            }
+
+            let manifest = createManifest msiRelease installerAsset
+            let manifestOutput = resolvePath [ "manifest.yaml" ]
+            File.WriteAllLines(path=manifestOutput, contents=manifest)
+            printfn "Created Pulumi/Winget manifest file:"
+            manifest |> Seq.iter Console.WriteLine 
+            0
 
 let generateManifest() = 
     let latestRelease = await (github.Repository.Release.GetLatest("pulumi", "pulumi"))

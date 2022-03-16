@@ -20,3 +20,9 @@ jobs:
         shell: bash
       - name: Generate Pulumi MSI
         run: dotnet run --project ./src -- generate msi
+      - name: Push WinGet Manifest
+        shell: powershell
+        run: |
+          $github_token = "${{ secrets.GITHUB_TOKEN }}"
+          iwr https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
+          .\wingetcreate.exe submit -t $github_token ./src/manifest.yaml
