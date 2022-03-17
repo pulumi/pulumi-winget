@@ -56,6 +56,7 @@ let createManifest (version: string) (installer: InstallerAsset) = [|
     $"PackageIdentifier: Pulumi.Pulumi"
     $"PackageName: Pulumi"
     $"PackageVersion: {version}"
+    $"Publisher: Pulumi Corp"
     $"License: Apache License 2.0"
     $"LicenseUrl: https://github.com/pulumi/pulumi/blob/master/LICENSE"
     $"ShortDescription: Pulumi CLI for managing modern infrastructure as code"
