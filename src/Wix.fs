@@ -39,9 +39,9 @@ let installer (elements: obj seq) =
         })
     ]
 
-let product (version: string) (elements: obj seq) = 
+let product (version: string) (productCode: string) (elements: obj seq) = 
     XElement.create(ns + "Product", seq {
-        XAttribute.create("Id", "*") 
+        XAttribute.create("Id", productCode) 
         XAttribute.create("UpgradeCode", Guid.NewGuid().ToString())
         XAttribute.create("Version", version)
         XAttribute.create("Name", "Pulumi")

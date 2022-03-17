@@ -31,7 +31,7 @@ let version (release: Release) =
 
 type InstallerAsset = { DownloadUrl: string; Sha256: string }
 
-let findWindowsInstaller (release: Release) : Result<InstallerAsset, string> = 
+let findWindowsBinaries (release: Release) : Result<InstallerAsset, string> = 
     let currentVersion = version release
     let checksums = 
         release.Assets
@@ -60,7 +60,9 @@ let findWindowsInstaller (release: Release) : Result<InstallerAsset, string> =
                     Sha256 = sha265
                 }
 
-let createManifest (version: string) (installer: InstallerAsset) = [|
+let formatProductCode (code: Guid) = "{" + code.ToString().ToUpper() + "}"
+
+let createManifest (version: string) (productCode: Guid) (installer: InstallerAsset) = [|
     $"PackageIdentifier: Pulumi.Pulumi"
     $"PackageName: Pulumi"
     $"PackageVersion: {version}"
@@ -73,6 +75,7 @@ let createManifest (version: string) (installer: InstallerAsset) = [|
     $"- Architecture: x64"
     $"  InstallerUrl: {installer.DownloadUrl}"
     $"  InstallerSha256: {installer.Sha256}"
+    $"  ProductCode: '{formatProductCode productCode}'"
     $"  InstallerType: msi"
     "PackageLocale: en-US"
     "ManifestType: singleton"
@@ -126,16 +129,16 @@ let computeSha256 (file: string) =
 
 let generateMsi() = 
     let latestRelease = await (github.Repository.Release.GetLatest("pulumi", "pulumi"))
-    match findWindowsInstaller latestRelease with 
+    match findWindowsBinaries latestRelease with 
     | Error errorMessage -> 
         printfn "Error occured while creating the manifest file for pulumi CLI:"
         printfn "%s" errorMessage
         1
 
-    | Ok windowsInstaller -> 
+    | Ok windowsBinaries -> 
         // Download ZIP file
-        printfn "Downloading Pulumi binaries from %s" windowsInstaller.DownloadUrl
-        let pulumiZip = await (httpClient.GetByteArrayAsync(windowsInstaller.DownloadUrl))
+        printfn "Downloading Pulumi binaries from %s" windowsBinaries.DownloadUrl
+        let pulumiZip = await (httpClient.GetByteArrayAsync(windowsBinaries.DownloadUrl))
         let pulumiZipOutput = resolvePath [ "pulumi.zip" ]
         File.WriteAllBytes(pulumiZipOutput, pulumiZip)
         // Unzip into ./pulumi
@@ -152,11 +155,14 @@ let generateMsi() =
 
         let componentId (filePath) = $"comp_{fileId filePath}"
 
+        // Random guid used for both the MSI and the manifest
+        let productCode = Guid.NewGuid()
+
         // Create installer definition
         // see below for allowed elements
         // https://wixtoolset.org/documentation/manual/v3/xsd/wix/wix.html
         let wixDefinition = Wix.installer [
-            Wix.product (version latestRelease) [
+            Wix.product (version latestRelease) (formatProductCode productCode) [
                 Wix.package [ 
                     Wix.attr "Platform" "x64"
                     Wix.attr "Description" "Pulumi CLI for managing cloud infrastructure"
@@ -235,7 +241,7 @@ let generateMsi() =
                 Sha256 = computeSha256 msi
             }
 
-            let manifest = createManifest (version latestRelease) installerAsset
+            let manifest = createManifest (version latestRelease) productCode installerAsset
             let manifestOutput = resolvePath [ "manifest.yaml" ]
             File.WriteAllLines(path=manifestOutput, contents=manifest)
             printfn "Created Pulumi/Winget manifest file:"
