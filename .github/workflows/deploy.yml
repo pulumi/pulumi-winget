@@ -33,4 +33,4 @@ jobs:
           $manifest = ./src/manifest.yaml
           $manifest_exists = Test-Path -Path $manifest -PathType Leaf
           iwr https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
-          if $manifest_exists { .\wingetcreate.exe submit -t $github_token $manifest }
+          if ($manifest_exists) { .\wingetcreate.exe submit -t $github_token $manifest }
