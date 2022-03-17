@@ -27,6 +27,6 @@ jobs:
       - name: Push WinGet Manifest
         shell: powershell
         run: |
-          $github_token = "${{ secrets.GITHUB_TOKEN }}"
+          $github_token = "${{ secrets.PULUMI_BOT_TOKEN }}"
           iwr https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
           .\wingetcreate.exe submit -t $github_token ./src/manifest.yaml
