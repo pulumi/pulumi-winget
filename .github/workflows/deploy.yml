@@ -9,23 +9,26 @@ on:
       - winget-deploy
 jobs:
   deploy:
-      runs-on: windows-latest
-      steps:
+    runs-on: windows-latest
+    steps:
       - name: Checkout code
         uses: actions/checkout@v2
-      - name: Setup dotnet SDK
+      - name: Setup dotnet SDK v6.0
         uses: actions/setup-dotnet@v1
         with:
           dotnet-version: '6.0.x'
-      - name: Install WixTools
-        shell: powershell
-        run: |
-          choco install wixtoolset
-      - name: Generate Pulumi manifest
-        run: dotnet run --project ./src -- generate manifest
+      - name: Set path for candle and light from WixTools
+        run: echo "C:\Program Files (x86)\WiX Toolset v3.11\bin" >> $GITHUB_PATH
+        shell: bash
+      - name: Generate Pulumi MSI
+        run: dotnet run --project ./src -- generate msi
+      - name: Setup dotnet SDK v5.0
+        uses: actions/setup-dotnet@v1
+        with:
+          dotnet-version: '5.0.x'
       - name: Push WinGet Manifest
         shell: powershell
         run: |
-          $github_token = "${{ secrets.GITHUB_TOKEN }}"
+          $github_token = "${{ secrets.PULUMI_BOT_TOKEN }}"
           iwr https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
           .\wingetcreate.exe submit -t $github_token ./src/manifest.yaml
