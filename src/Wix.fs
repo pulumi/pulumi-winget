@@ -29,12 +29,15 @@ type XElement with
 let wixNamespace = "http://schemas.microsoft.com/wix/2006/wi"
 let ns = XNamespace.op_Implicit(wixNamespace)
 
-let root (elements: obj seq) = 
-    XElement.createWix(ns, seq {
-        yield  XAttribute.create("xmlns", wixNamespace)
-        for element in elements do 
-            yield element
-    })
+
+let installer (elements: obj seq) = 
+    XDocument [
+        XElement.createWix(ns, seq {
+            yield  XAttribute.create("xmlns", wixNamespace)
+            for element in elements do 
+                yield element
+        })
+    ]
 
 let product (version: string) (elements: obj seq) = 
     XElement.create(ns + "Product", seq {

@@ -17,9 +17,17 @@ let httpClient = new HttpClient()
 httpClient.DefaultRequestHeaders.UserAgent.Add(Headers.ProductInfoHeaderValue("PulumiBot", "1.0"))
 
 let github = new GitHubClient(ProductHeaderValue "PulumiBot")
-github.Credentials <- Credentials(Environment.GetEnvironmentVariable "GITHUB_TOKEN")
+let githubToken = Environment.GetEnvironmentVariable "GITHUB_TOKEN"
+// only assign github token to the client when it is available (usually in Github CI)
+if not (isNull githubToken) then  github.Credentials <- Credentials(githubToken)
 
-let version (release: Release) = release.Name.Substring(1, release.Name.Length - 1)
+let version (release: Release) = 
+    if not (String.IsNullOrWhiteSpace(release.Name)) then
+        release.Name.Substring(1, release.Name.Length - 1)
+    elif not (String.IsNullOrWhiteSpace(release.TagName)) then 
+        release.TagName.Substring(1, release.TagName.Length - 1)
+    else 
+        ""
 
 type InstallerAsset = { DownloadUrl: string; Sha256: string }
 
@@ -93,6 +101,28 @@ let latestMsiRelease() =
         |> Seq.maxBy (fun release -> release.CreatedAt)
         |> Some
 
+let clean() = 
+    printfn "Cleaning up artifacts"
+    let unzippedPulumiPath = resolvePath [ "pulumi"]
+    if Directory.Exists unzippedPulumiPath then 
+        printfn "Deleting %s" unzippedPulumiPath
+        Fake.IO.Shell.deleteDir unzippedPulumiPath
+    
+    let filesToDelete = [
+        "pulumi.zip"
+        "manifest.yaml"
+        "PulumiInstaller.wxs"
+    ]
+    for file in filesToDelete do
+        let filePath = resolvePath [ file ]
+        if File.Exists filePath then 
+            printfn "Deleting %s" filePath
+            File.Delete filePath
+
+let computeSha256 (file: string) = 
+    let sha256Algo = HashAlgorithm.Create("SHA256")
+    let sha256 = sha256Algo.ComputeHash(new MemoryStream(File.ReadAllBytes file))
+    BitConverter.ToString(sha256).Replace("-", "")
 
 let generateMsi() = 
     let latestRelease = await (github.Repository.Release.GetLatest("pulumi", "pulumi"))
@@ -104,6 +134,7 @@ let generateMsi() =
 
     | Ok windowsInstaller -> 
         // Download ZIP file
+        printfn "Downloading Pulumi binaries from %s" windowsInstaller.DownloadUrl
         let pulumiZip = await (httpClient.GetByteArrayAsync(windowsInstaller.DownloadUrl))
         let pulumiZipOutput = resolvePath [ "pulumi.zip" ]
         File.WriteAllBytes(pulumiZipOutput, pulumiZip)
@@ -119,51 +150,54 @@ let generateMsi() =
             // Identifiers may contain ASCII characters A-Z, a-z, digits, underscores (_), or periods (.).  Every identifier must begin with either a letter or an underscore.
             fileName.Replace("-", "_")
 
-        // Schema of allowed elements
+        let componentId (filePath) = $"comp_{fileId filePath}"
+
+        // Create installer definition
+        // see below for allowed elements
         // https://wixtoolset.org/documentation/manual/v3/xsd/wix/wix.html
-        let wixDefinition = XDocument [
-            Wix.root [
-                Wix.product (version latestRelease) [
-                    
-                    Wix.package [ 
-                        Wix.attr "Platform" "x64"
-                        Wix.attr "Description" "Pulumi CLI for managing cloud infrastructure"
-                        Wix.attr "InstallerVersion" "200"
-                        Wix.attr "Compressed" "yes"
+        let wixDefinition = Wix.installer [
+            Wix.product (version latestRelease) [
+                Wix.package [ 
+                    Wix.attr "Platform" "x64"
+                    Wix.attr "Description" "Pulumi CLI for managing cloud infrastructure"
+                    Wix.attr "InstallerVersion" "200"
+                    Wix.attr "Compressed" "yes"
+                ]
+
+                // Tells the installer to embed all source files
+                Wix.mediaTemplate [ Wix.attr "EmbedCab" "yes" ]
+
+                Wix.directory "TARGETDIR" "SourceDir" [
+                    Wix.directoryId "ProgramFilesFolder" [
+                        Wix.directory "PULUMIDIR" "Pulumi" []
                     ]
+                ]
 
-                    Wix.mediaTemplate [ Wix.attr "EmbedCab" "yes" ]
-
-                    Wix.directory "TARGETDIR" "SourceDir" [
-                        Wix.directoryId "ProgramFilesFolder" [
-                            Wix.directory "PULUMIDIR" "Pulumi" []
-                        ]
+                Wix.directoryRef "PULUMIDIR" [
+                    for file in filesFromUnzippedArchive do
+                    Wix.component' (componentId file) [
+                        Wix.file (fileId file) file
                     ]
+                ]
+                        
+                Wix.component' "SetEnvironment" [
+                    // Required dummy <CreateFolder /> element
+                    Wix.createFolder()
+                    // Add install folder to PATH
+                    Wix.updateEnvironmentPath "PULUMIDIR"        
+                ]
 
-                    Wix.directoryRef "PULUMIDIR" [
-                        for file in filesFromUnzippedArchive do
-                            Wix.component' $"component_{fileId file}" [
-                                Wix.file (fileId file) file
-                            ]
+                Wix.feature "MainInstaller" "Installer" [
+                    for file in filesFromUnzippedArchive do
+                    Wix.componentRef (componentId file)
+                ]
 
-                        Wix.component' "SetEnvironment" [
-                            Wix.createFolder()
-                            // Add install folder to PATH
-                            Wix.updateEnvironmentPath "PULUMIDIR"
-                        ]
-                    ]
-
-                    Wix.feature "MainInstaller" "Installer" [
-                        for file in filesFromUnzippedArchive do
-                        Wix.componentRef $"component_{fileId file}"
-                    ]
-
-                    Wix.feature "UpdatePath" "Update PATH" [
-                        Wix.componentRef "SetEnvironment"
-                    ]
+                Wix.feature "UpdatePath" "Update PATH" [
+                    Wix.componentRef "SetEnvironment"
                 ]
             ]
         ]
+        
 
         let wixOutput = resolvePath [ "PulumiInstaller.wxs" ]
 
@@ -173,24 +207,20 @@ let generateMsi() =
 
         System.Console.WriteLine(File.ReadAllText wixOutput)
 
-        Shell.exec("candle.exe", "PulumiInstaller.wxs")
-        Shell.exec("light.exe", $"PulumiInstaller.wixobj -o pulumi-{version latestRelease}-windows-x64.msi")
-
-        let msi = resolvePath [ $"pulumi-{version latestRelease}-windows-x64.msi" ]
-
-        let info = FileInfo msi
-
-        printfn "Succesfully created MSI at '%s' (%d bytes)" msi info.Length
-
         match latestMsiRelease() with 
-        | Some msiRelease when version msiRelease = version latestRelease -> 
+        | Some msiRelease when version msiRelease = version latestRelease  ->
             printfn "Version v%s of Pulumi MSI is already published, skipping..." (version msiRelease)
-            1
+            0
 
         | _ ->
+            // TODO: check candle/light already exist before executing them
+            Shell.exec("candle.exe", "PulumiInstaller.wxs")
+            Shell.exec("light.exe", $"PulumiInstaller.wixobj -o pulumi-{version latestRelease}-windows-x64.msi")
+            let msi = resolvePath [ $"pulumi-{version latestRelease}-windows-x64.msi" ]
+            let info = FileInfo msi
+            printfn "Succesfully created MSI at '%s' (%d bytes)" msi info.Length
             printfn "Publishing asset to github..."
-            let sha256Algo = HashAlgorithm.Create("SHA256")
-            let sha256 = sha256Algo.ComputeHash(new MemoryStream(File.ReadAllBytes msi))
+            
             let releaseInfo = NewRelease($"v{version latestRelease}")
             let msiRelease = await (github.Repository.Release.Create("pulumi", "pulumi-winget", releaseInfo))
             let releaseAsset = ReleaseAssetUpload()
@@ -202,7 +232,7 @@ let generateMsi() =
             printfn $"Released {version latestRelease}: {uploadResult.BrowserDownloadUrl}"
             let installerAsset = {
                 DownloadUrl = uploadResult.BrowserDownloadUrl
-                Sha256 = BitConverter.ToString(sha256).Replace("-", "")
+                Sha256 = computeSha256 msi
             }
 
             let manifest = createManifest (version latestRelease) installerAsset
@@ -212,12 +242,13 @@ let generateMsi() =
             manifest |> Seq.iter Console.WriteLine 
             0
 
-
 [<EntryPoint>]
 let main (args: string[]) = 
     try
         match args with 
-        | [| "generate"; "msi" |] -> generateMsi()
+        | [| "generate"; "msi" |] -> 
+            clean()
+            generateMsi()
         | otherwise -> 
             printfn "Unknown arguments provided: %A" otherwise
             0
