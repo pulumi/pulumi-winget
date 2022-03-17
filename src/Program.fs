@@ -181,16 +181,16 @@ let generateMsi() =
 
                 Wix.directoryRef "PULUMIDIR" [
                     for file in filesFromUnzippedArchive do
-                    Wix.component' (componentId file) [
-                        Wix.file (fileId file) file
+                        Wix.component' (componentId file) [
+                            Wix.file (fileId file) file
+                        ]
+
+                    Wix.component' "SetEnvironment" [
+                        // Required dummy <CreateFolder /> element
+                        Wix.createFolder()
+                        // Add install folder to PATH
+                        Wix.updateEnvironmentPath "PULUMIDIR"        
                     ]
-                ]
-                        
-                Wix.component' "SetEnvironment" [
-                    // Required dummy <CreateFolder /> element
-                    Wix.createFolder()
-                    // Add install folder to PATH
-                    Wix.updateEnvironmentPath "PULUMIDIR"        
                 ]
 
                 Wix.feature "MainInstaller" "Installer" [
