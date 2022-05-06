@@ -39,13 +39,17 @@ let installer (elements: obj seq) =
         })
     ]
 
+// The upgrade code has to be stable across version of Pulumi
+// this way, winget will no longer install different versions side-by-side
+let stableUpgradeCode = "111633d5-1aa2-4136-bb1c-190289e9cf15"
+
 let product (version: string) (productCode: string) (elements: obj seq) = 
     XElement.create(ns + "Product", seq {
         XAttribute.create("Id", productCode) 
-        XAttribute.create("UpgradeCode", Guid.NewGuid().ToString())
+        XAttribute.create("UpgradeCode", stableUpgradeCode)
         XAttribute.create("Version", version)
         XAttribute.create("Name", "Pulumi")
-        XAttribute.create("Manufacturer", "Pulumi")
+        XAttribute.create("Manufacturer", "Pulumi Corp")
         XAttribute.create("Language", "1033")
         for element in elements do 
             element
