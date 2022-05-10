@@ -10,3 +10,4 @@ jobs:
         with:
           identifier: Pulumi.Pulumi
           token: ${{ secrets.PULUMI_BOT_TOKEN }}
+          fork-user: pulumi-bot
