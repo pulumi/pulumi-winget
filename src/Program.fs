@@ -60,27 +60,7 @@ let findWindowsBinaries (release: Release) : Result<InstallerAsset, string> =
                     Sha256 = sha265
                 }
 
-let formatProductCode (code: Guid) = "{" + code.ToString().ToUpper() + "}"
-
-let createManifest (version: string) (productCode: Guid) (installer: InstallerAsset) = [|
-    $"PackageIdentifier: Pulumi.Pulumi"
-    $"PackageName: Pulumi"
-    $"PackageVersion: {version}"
-    $"Publisher: Pulumi Corp"
-    $"License: Apache License 2.0"
-    $"LicenseUrl: https://github.com/pulumi/pulumi/blob/master/LICENSE"
-    $"ShortDescription: Pulumi CLI for managing modern infrastructure as code"
-    $"PackageUrl: https://www.pulumi.com"
-    $"Installers:"
-    $"- Architecture: x64"
-    $"  InstallerUrl: {installer.DownloadUrl}"
-    $"  InstallerSha256: {installer.Sha256}"
-    $"  ProductCode: '{formatProductCode productCode}'"
-    $"  InstallerType: msi"
-    "PackageLocale: en-US"
-    "ManifestType: singleton"
-    "ManifestVersion: 1.0.0"
-|]
+let formatProductCode (code: Guid) = "{" + code.ToString().ToUpper() + "}" 
 
 let cwd = __SOURCE_DIRECTORY__
 
@@ -121,11 +101,6 @@ let clean() =
         if File.Exists filePath then 
             printfn "Deleting %s" filePath
             File.Delete filePath
-
-let computeSha256 (file: string) = 
-    let sha256Algo = HashAlgorithm.Create("SHA256")
-    let sha256 = sha256Algo.ComputeHash(new MemoryStream(File.ReadAllBytes file))
-    BitConverter.ToString(sha256).Replace("-", "")
 
 let generateMsi() = 
     let latestRelease = await (github.Repository.Release.GetLatest("pulumi", "pulumi"))
@@ -236,16 +211,6 @@ let generateMsi() =
 
             let uploadResult = await (github.Repository.Release.UploadAsset(msiRelease, releaseAsset))
             printfn $"Released {version latestRelease}: {uploadResult.BrowserDownloadUrl}"
-            let installerAsset = {
-                DownloadUrl = uploadResult.BrowserDownloadUrl
-                Sha256 = computeSha256 msi
-            }
-
-            let manifest = createManifest (version latestRelease) productCode installerAsset
-            let manifestOutput = resolvePath [ "manifest.yaml" ]
-            File.WriteAllLines(path=manifestOutput, contents=manifest)
-            printfn "Created Pulumi/Winget manifest file:"
-            manifest |> Seq.iter Console.WriteLine 
             0
 
 [<EntryPoint>]
