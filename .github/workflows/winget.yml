@@ -3,11 +3,11 @@ on:
   release:
     types: [released]
 jobs:
-  publish:
-    runs-on: windows-latest # action can only be run on windows
-    steps:
-      - uses: vedantmgoyal2009/winget-releaser@latest
-        with:
-          identifier: Pulumi.Pulumi
-          token: ${{ secrets.PULUMI_BOT_TOKEN }}
-          fork-user: pulumi-bot
+#  publish:
+#   runs-on: windows-latest # action can only be run on windows
+#   steps:
+#     - uses: vedantmgoyal2009/winget-releaser@latest
+#       with:
+#         identifier: Pulumi.Pulumi
+#         token: ${{ secrets.PULUMI_BOT_TOKEN }}
+#         fork-user: pulumi-bot
