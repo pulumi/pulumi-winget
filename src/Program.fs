@@ -62,31 +62,6 @@ let findWindowsBinaries (release: Release) : Result<InstallerAsset, string> =
 
 let formatProductCode (code: Guid) = "{" + code.ToString().ToUpper() + "}" 
 
-let createManifest (version: string) (productCode: Guid) (installer: InstallerAsset) = [|
-    $"PackageIdentifier: Pulumi.Pulumi"
-    $"PackageName: Pulumi"
-    $"PackageVersion: {version}"
-    $"Publisher: Pulumi Corp"
-    $"License: Apache License 2.0"
-    $"LicenseUrl: https://github.com/pulumi/pulumi/blob/master/LICENSE"
-    $"ShortDescription: Pulumi CLI for managing modern infrastructure as code"
-    $"PackageUrl: https://www.pulumi.com"
-    $"Installers:"
-    $"- Architecture: x64"
-    $"  InstallerUrl: {installer.DownloadUrl}"
-    $"  InstallerSha256: {installer.Sha256}"
-    $"  ProductCode: '{formatProductCode productCode}'"
-    $"  InstallerType: msi"
-    "PackageLocale: en-US"
-    "ManifestType: singleton"
-    "ManifestVersion: 1.0.0"
-|]
-
-let computeSha256 (file: string) = 
-    let sha256Algo = HashAlgorithm.Create("SHA256")
-    let sha256 = sha256Algo.ComputeHash(new MemoryStream(File.ReadAllBytes file))
-    BitConverter.ToString(sha256).Replace("-", "")
-
 let cwd = __SOURCE_DIRECTORY__
 
 let resolvePath (relativePaths: string list) =  Path.Combine [| 
@@ -118,7 +93,8 @@ let clean() =
     
     let filesToDelete = [
         "pulumi.zip"
-        "manifest.yaml"
+        "download-url.txt"
+        "version.txt"
         "PulumiInstaller.wxs"
     ]
     for file in filesToDelete do
@@ -145,7 +121,10 @@ let generateMsi() =
         let pulumiUnzipped = resolvePath [ "pulumi" ]
         ZipFile.ExtractToDirectory(pulumiZipOutput, pulumiUnzipped)
         
-        let filesFromUnzippedArchive = Directory.EnumerateFiles (resolvePath [ "pulumi"; "pulumi"; "bin" ])
+        let filesFromUnzippedArchive = Directory.EnumerateFiles(pulumiUnzipped, "*.*", SearchOption.AllDirectories)
+
+        if Seq.isEmpty filesFromUnzippedArchive then
+            failwith "Error occured while getting files from unzipped Pulumi archive: 0 files found"
 
         let fileId (filePath: string) = 
             let fileName = Path.GetFileName filePath
@@ -236,16 +215,14 @@ let generateMsi() =
 
             let uploadResult = await (github.Repository.Release.UploadAsset(msiRelease, releaseAsset))
             printfn $"Released {version latestRelease}: {uploadResult.BrowserDownloadUrl}"
-            let installerAsset = {
-                DownloadUrl = uploadResult.BrowserDownloadUrl
-                Sha256 = computeSha256 msi
-            }
+            let downloadUrlPath = resolvePath [ "download-url.txt" ]
+            File.WriteAllText(downloadUrlPath, uploadResult.BrowserDownloadUrl)
+            printfn $"Written the release download URL to file {downloadUrlPath}"
 
-            let manifest = createManifest (version latestRelease) productCode installerAsset
-            let manifestOutput = resolvePath [ "manifest.yaml" ]
-            File.WriteAllLines(path=manifestOutput, contents=manifest)
-            printfn "Created Pulumi/Winget manifest file:"
-            manifest |> Seq.iter Console.WriteLine 
+            let versionPath = resolvePath [ "version.txt" ]
+            File.WriteAllText(versionPath, version latestRelease)
+            printfn $"Written the release version to file {versionPath}"
+
             0
 
 [<EntryPoint>]
@@ -255,6 +232,9 @@ let main (args: string[]) =
         | [| "generate"; "msi" |] -> 
             clean()
             generateMsi()
+        | [| "clean" |] ->  
+            clean()
+            0
         | otherwise -> 
             printfn "Unknown arguments provided: %A" otherwise
             0

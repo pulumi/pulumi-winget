@@ -3,7 +3,10 @@ name: Generate MSI
 env:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-on: [push]
+on:
+  push:
+    branches:
+      - master
 
 jobs:
   build:
@@ -28,7 +31,9 @@ jobs:
         shell: powershell
         run: |
           $github_token = "${{ secrets.PULUMI_BOT_TOKEN }}"
-          $manifest = "./src/manifest.yaml"
-          $manifest_exists = Test-Path -Path $manifest -PathType Leaf
+          $downloadUrl = Get-Content -Path ./src/download-url.txt
+          $version = Get-Content -Path ./src/version.txt
+
+          $download_exists = Test-Path -Path ./src/download-url.txt -PathType Leaf
           iwr https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
-          if ($manifest_exists) { .\wingetcreate.exe submit -t $github_token $manifest }
+          if ($download_exists) { .\wingetcreate.exe update Pulumi.Pulumi --urls $downloadUrl --version $version --token $github_token --submit }
