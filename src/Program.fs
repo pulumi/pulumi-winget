@@ -51,7 +51,8 @@ let findWindowsBinaries (release: Release) : Result<InstallerAsset, string> =
         |> Array.tryFind (fun line -> line.EndsWith $"pulumi-v{currentVersion}-windows-x64.zip")
         |> function 
             | None ->
-                Error "Could not find the installer SHA256 for the windows build"
+                Error "Could not find the installer SHA512 for the windows build"
+
             | Some line -> 
                 let parts = line.Split "  "
                 let sha512 = parts[0]
