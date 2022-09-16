@@ -29,20 +29,20 @@ let version (release: Release) =
     else 
         ""
 
-type InstallerAsset = { DownloadUrl: string; Sha256: string }
+type InstallerAsset = { DownloadUrl: string; Sha512: string }
 
 let findWindowsBinaries (release: Release) : Result<InstallerAsset, string> = 
     let currentVersion = version release
     let checksums = 
         release.Assets
-        |> Seq.tryFind (fun asset -> asset.Name = $"pulumi-{currentVersion}-checksums.txt")
+        |> Seq.tryFind (fun asset -> asset.Name = $"SHA512SUMS")
 
     let windowsBuild = 
         release.Assets
         |> Seq.tryFind (fun asset -> asset.Name = $"pulumi-v{currentVersion}-windows-x64.zip")
 
     if checksums.IsNone then 
-        Error $"Checksums file pulumi-{currentVersion}-checksums.txt was not found"
+        Error $"Checksums file SHA512SUMS was not found"
     elif windowsBuild.IsNone then
         Error $"Windows build pulumi-v{currentVersion}-windows-x64.zip was not found"
     else 
@@ -51,13 +51,14 @@ let findWindowsBinaries (release: Release) : Result<InstallerAsset, string> =
         |> Array.tryFind (fun line -> line.EndsWith $"pulumi-v{currentVersion}-windows-x64.zip")
         |> function 
             | None ->
-                Error "Could not find the installer SHA256 for the windows build"
+                Error "Could not find the installer SHA512 for the windows build"
+
             | Some line -> 
                 let parts = line.Split "  "
-                let sha265 = parts[0]
+                let sha512 = parts[0]
                 Ok {
                     DownloadUrl = windowsBuild.Value.BrowserDownloadUrl
-                    Sha256 = sha265
+                    Sha512 = sha512
                 }
 
 let formatProductCode (code: Guid) = "{" + code.ToString().ToUpper() + "}" 
