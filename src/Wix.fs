@@ -105,6 +105,12 @@ let mediaTemplate (elements: obj seq) =
             yield element |> box
     })
 
+let majorUpgrade (elements: obj seq) = 
+    XElement.create(ns + "MajorUpgrade", seq {
+        for element in elements do
+            yield element |> box
+    })
+
 let component' (id: string) (elements: obj seq) = 
     XElement.create(ns + "Component", seq {
         yield XAttribute.create("Id", id) |> box
