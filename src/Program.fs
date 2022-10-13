@@ -153,6 +153,9 @@ let generateMsi() =
                 // Tells the installer to embed all source files
                 Wix.mediaTemplate [ Wix.attr "EmbedCab" "yes" ]
 
+                // Installation of new version will uninstall old version (if found)
+                Wix.majorUpgrade [ Wix.attr "DowngradeErrorMessage" "Can't downgrade." ]
+
                 Wix.directory "TARGETDIR" "SourceDir" [
                     Wix.directoryId "ProgramFilesFolder" [
                         Wix.directory "PULUMIDIR" "Pulumi" []
