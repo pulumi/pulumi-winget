@@ -7,6 +7,7 @@ open System.Threading.Tasks
 open System.Xml.Linq
 open Fake.Core
 open System.Security.Cryptography
+open System.Text
 
 let inline await (task: Task<'t>) = 
     task
@@ -103,6 +104,11 @@ let clean() =
         if File.Exists filePath then 
             printfn "Deleting %s" filePath
             File.Delete filePath
+
+let computeSha256 (file: string) = 
+    let sha256Algo = HashAlgorithm.Create("SHA256")
+    let sha256 = sha256Algo.ComputeHash(new MemoryStream(File.ReadAllBytes file))
+    BitConverter.ToString(sha256).Replace("-", "")
 
 let generateMsi() = 
     let latestRelease = await (github.Repository.Release.GetLatest("pulumi", "pulumi"))
@@ -206,21 +212,31 @@ let generateMsi() =
             Shell.exec("candle.exe", "PulumiInstaller.wxs")
             Shell.exec("light.exe", $"PulumiInstaller.wixobj -o pulumi-{version latestRelease}-windows-x64.msi")
             let msi = resolvePath [ $"pulumi-{version latestRelease}-windows-x64.msi" ]
+            let msiChecksum256 = computeSha256 msi
             let info = FileInfo msi
             printfn "Succesfully created MSI at '%s' (%d bytes)" msi info.Length
             printfn "Publishing asset to github..."
-            
+
             let releaseInfo = NewRelease($"v{version latestRelease}")
             let msiRelease = await (github.Repository.Release.Create("pulumi", "pulumi-winget", releaseInfo))
-            let releaseAsset = ReleaseAssetUpload()
-            releaseAsset.FileName <- Path.GetFileName msi
-            releaseAsset.ContentType <- "application/msi"
-            releaseAsset.RawData <- File.OpenRead(msi)
+            let installerAsset = ReleaseAssetUpload()
+            installerAsset.FileName <- Path.GetFileName msi
+            installerAsset.ContentType <- "application/msi"
+            installerAsset.RawData <- File.OpenRead(msi)
 
-            let uploadResult = await (github.Repository.Release.UploadAsset(msiRelease, releaseAsset))
-            printfn $"Released {version latestRelease}: {uploadResult.BrowserDownloadUrl}"
+            let checksumAsset = ReleaseAssetUpload()
+            checksumAsset.FileName <- "checksum-256.txt"
+            checksumAsset.ContentType <- "text/plain"
+            checksumAsset.RawData <- new MemoryStream(Encoding.UTF8.GetBytes(msiChecksum256))
+
+            let uploadedInstaller = await (github.Repository.Release.UploadAsset(msiRelease, installerAsset))
+            let uploadedChecksumFile = await (github.Repository.Release.UploadAsset(msiRelease, checksumAsset))
+
+            printfn $"Released {version latestRelease}: {uploadedInstaller.BrowserDownloadUrl}"
+            printfn $"Checksum: {uploadedChecksumFile.BrowserDownloadUrl}"
+        
             let downloadUrlPath = resolvePath [ "download-url.txt" ]
-            File.WriteAllText(downloadUrlPath, uploadResult.BrowserDownloadUrl)
+            File.WriteAllText(downloadUrlPath, uploadedInstaller.BrowserDownloadUrl)
             printfn $"Written the release download URL to file {downloadUrlPath}"
 
             let versionPath = resolvePath [ "version.txt" ]
