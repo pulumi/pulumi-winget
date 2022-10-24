@@ -30,10 +30,14 @@ jobs:
       - name: Push WinGet Manifest
         shell: powershell
         run: |
+          $download_exists = Test-Path -Path ./src/download-url.txt -PathType Leaf
+          if (!download_exists) {
+            echo "./src/download-url.txt file was not found, this means we skipped generating an installer"
+            return
+          }
+
           $github_token = "${{ secrets.PULUMI_BOT_TOKEN }}"
           $downloadUrl = Get-Content -Path ./src/download-url.txt
           $version = Get-Content -Path ./src/version.txt
-
-          $download_exists = Test-Path -Path ./src/download-url.txt -PathType Leaf
           iwr https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
-          if ($download_exists) { .\wingetcreate.exe update Pulumi.Pulumi --urls $downloadUrl --version $version --token $github_token --submit }
+          .\wingetcreate.exe update Pulumi.Pulumi --urls $downloadUrl --version $version --token $github_token --submit
