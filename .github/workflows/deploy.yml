@@ -31,7 +31,7 @@ jobs:
         shell: powershell
         run: |
           $download_exists = Test-Path -Path ./src/download-url.txt -PathType Leaf
-          if (!download_exists) {
+          if (!$download_exists) {
             echo "./src/download-url.txt file was not found, this means we skipped generating an installer"
             return
           }
