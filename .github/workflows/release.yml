@@ -1,0 +1,35 @@
+name: winget-pkgs
+
+on:
+  workflow_dispatch:
+  release:
+    types: [released]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Setup dotnet SDK v6.0
+        uses: actions/setup-dotnet@v1
+        with:
+          dotnet-version: "6.0.x"
+
+      - name: Generate Pulumi MSI
+        run: dotnet run --project ./src -- generate msi
+
+      - name: Set version
+        run: echo "VERSION=$(cat src/version.txt)" >> $GITHUB_ENV
+
+      - name: Install msitools
+        run: sudo apt update && sudo apt install -y msitools
+
+      - uses: vedantmgoyal2009/winget-releaser@v2
+        with:
+          fork-user: pulumi-bot
+          release-repository: pulumi-winget
+          identifier: Pulumi.Pulumi
+          release-tag: v${{ env.VERSION }}
+          token: ${{ secrets.PULUMI_BOT_TOKEN }}
