@@ -110,7 +110,7 @@ let computeSha256 (file: string) =
     let sha256 = sha256Algo.ComputeHash(new MemoryStream(File.ReadAllBytes file))
     BitConverter.ToString(sha256).Replace("-", "")
 
-let generateMsi() = 
+let generateMsi (keyVaultUri: string) (clientId: string) (tenantId: string) (clientSecret: string) (certName: string) = 
     let latestRelease = await (github.Repository.Release.GetLatest("pulumi", "pulumi"))
     match findWindowsBinaries latestRelease with 
     | Error errorMessage -> 
@@ -212,6 +212,14 @@ let generateMsi() =
             Shell.exec("candle.exe", "PulumiInstaller.wxs")
             Shell.exec("light.exe", $"PulumiInstaller.wixobj -o pulumi-{version latestRelease}-windows-x64.msi")
             let msi = resolvePath [ $"pulumi-{version latestRelease}-windows-x64.msi" ]
+
+            let hasVal (v: string) =
+                not (String.IsNullOrWhiteSpace v)
+
+            if (hasVal keyVaultUri) && (hasVal clientId) && (hasVal tenantId) && (hasVal clientSecret) && (hasVal certName) then
+                printfn "Signing MSI..."
+                Shell.exec("AzureSignTool.exe", $"sign -kvu {keyVaultUri} -kvi {clientId} -kvt {tenantId} -kvs {clientSecret} -kvc {certName} -tr http://timestamp.digicert.com -v {msi}")
+
             let msiChecksum256 = computeSha256 msi
             let info = FileInfo msi
             printfn "Succesfully created MSI at '%s' (%d bytes)" msi info.Length
@@ -251,7 +259,10 @@ let main (args: string[]) =
         match args with 
         | [| "generate"; "msi" |] -> 
             clean()
-            generateMsi()
+            generateMsi "" "" "" "" ""
+        | [| "generate"; "msi"; keyVaultUri; clientId; tenantId; clientSecret; certName |] -> 
+            clean()
+            generateMsi keyVaultUri clientId tenantId clientSecret certName
         | [| "clean" |] ->  
             clean()
             0
