@@ -106,9 +106,10 @@ let clean() =
             File.Delete filePath
 
 let computeSha256 (file: string) = 
-    let sha256Algo = HashAlgorithm.Create("SHA256")
-    let sha256 = sha256Algo.ComputeHash(new MemoryStream(File.ReadAllBytes file))
-    BitConverter.ToString(sha256).Replace("-", "")
+    use fs = File.OpenRead(file)
+    use sha256 = SHA256.Create()
+    let hashBytes = sha256.ComputeHash(fs)
+    Convert.ToHexString(hashBytes)
 
 let generateMsi (keyVaultUri: string) (clientId: string) (tenantId: string) (clientSecret: string) (certName: string) = 
     let latestRelease = await (github.Repository.Release.GetLatest("pulumi", "pulumi"))

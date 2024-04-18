@@ -13,11 +13,13 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
-      - name: Setup dotnet SDK v6.0
-        uses: actions/setup-dotnet@v1
+        uses: actions/checkout@v4
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '6.0.x'
+          dotnet-version: |
+            6.0.x
+            8.0.x
       - name: Set path for candle and light from WixTools
         run: echo "C:\Program Files (x86)\WiX Toolset v3.14\bin" >> $GITHUB_PATH
         shell: bash
@@ -26,10 +28,6 @@ jobs:
           dotnet tool install --global AzureSignTool
       - name: Generate Pulumi MSI
         run: dotnet run --project ./src -- generate msi "${{ secrets.AZURE_KEY_VAULT_URI }}" "${{ secrets.AZURE_CLIENT_ID }}" "${{ secrets.AZURE_TENANT_ID }}" "${{ secrets.AZURE_CLIENT_SECRET }}" "${{ secrets.AZURE_CERT_NAME }}"
-      - name: Setup dotnet SDK v5.0
-        uses: actions/setup-dotnet@v1
-        with:
-          dotnet-version: '5.0.x'
       - name: Push WinGet Manifest
         shell: powershell
         run: |
