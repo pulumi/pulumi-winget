@@ -9,6 +9,7 @@ jobs:
   deploy:
     uses: ./.github/workflows/shared.yml
     with:
+      publish_release: true
       push_manifest: true
     secrets:
       AZURE_SIGNING_KEY_VAULT_URI: ${{ secrets.AZURE_SIGNING_KEY_VAULT_URI }}
