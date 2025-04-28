@@ -52,7 +52,7 @@ jobs:
       - name: Generate Pulumi MSI
         run: dotnet run --project ./src -- ${{ inputs.publish_release && 'generate-publish' || 'generate' }} msi "${{ secrets.AZURE_SIGNING_KEY_VAULT_URI }}" "${{ secrets.AZURE_SIGNING_CLIENT_ID }}" "${{ secrets.AZURE_SIGNING_TENANT_ID }}" "${{ secrets.AZURE_SIGNING_CLIENT_SECRET }}" "${{ secrets.AZURE_SIGNING_CERT_NAME }}"
         env:
-          GITHUB_TOKEN: ${{ inputs.publish_release && secrets.PULUMI_BOT_TOKEN || '' }}
+          GITHUB_TOKEN: ${{ secrets.PULUMI_BOT_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Push WinGet Manifest
         if: inputs.push_manifest == true
