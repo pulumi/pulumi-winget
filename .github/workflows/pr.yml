@@ -1,20 +1,19 @@
-name: Deploy
+name: Pull Request
 
 on:
-  repository_dispatch:
-    types:
-      - winget-deploy
+  pull_request:
+    branches:
+      - master
 
 jobs:
-  deploy:
+  build:
     uses: ./.github/workflows/shared.yml
     with:
-      publish_release: true
-      push_manifest: true
+      publish_release: false
+      push_manifest: false
     secrets:
       AZURE_SIGNING_KEY_VAULT_URI: ${{ secrets.AZURE_SIGNING_KEY_VAULT_URI }}
       AZURE_SIGNING_CLIENT_ID: ${{ secrets.AZURE_SIGNING_CLIENT_ID }}
       AZURE_SIGNING_TENANT_ID: ${{ secrets.AZURE_SIGNING_TENANT_ID }}
       AZURE_SIGNING_CLIENT_SECRET: ${{ secrets.AZURE_SIGNING_CLIENT_SECRET }}
       AZURE_SIGNING_CERT_NAME: ${{ secrets.AZURE_SIGNING_CERT_NAME }}
-      PULUMI_BOT_TOKEN: ${{ secrets.PULUMI_BOT_TOKEN }}

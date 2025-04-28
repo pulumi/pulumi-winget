@@ -1,8 +1,5 @@
 name: Generate MSI
 
-env:
-  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
 on:
   push:
     branches:
@@ -10,35 +7,14 @@ on:
 
 jobs:
   build:
-    runs-on: windows-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      - name: Setup dotnet
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: |
-            6.0.x
-            8.0.x
-      - name: Set path for candle and light from WixTools
-        run: echo "C:\Program Files (x86)\WiX Toolset v3.14\bin" >> $GITHUB_PATH
-        shell: bash
-      - name: Install AzureSignTool
-        run: |
-          dotnet tool install --global AzureSignTool
-      - name: Generate Pulumi MSI
-        run: dotnet run --project ./src -- generate msi "${{ secrets.AZURE_KEY_VAULT_URI }}" "${{ secrets.AZURE_CLIENT_ID }}" "${{ secrets.AZURE_TENANT_ID }}" "${{ secrets.AZURE_CLIENT_SECRET }}" "${{ secrets.AZURE_CERT_NAME }}"
-      - name: Push WinGet Manifest
-        shell: powershell
-        run: |
-          $download_exists = Test-Path -Path ./src/download-url.txt -PathType Leaf
-          if (!$download_exists) {
-            echo "./src/download-url.txt file was not found, this means we skipped generating an installer"
-            return
-          }
-
-          $github_token = "${{ secrets.PULUMI_BOT_TOKEN }}"
-          $downloadUrl = Get-Content -Path ./src/download-url.txt
-          $version = Get-Content -Path ./src/version.txt
-          iwr https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
-          .\wingetcreate.exe update Pulumi.Pulumi --urls $downloadUrl --version $version --token $github_token --submit
+    uses: ./.github/workflows/shared.yml
+    with:
+      publish_release: true
+      push_manifest: true
+    secrets:
+      AZURE_SIGNING_KEY_VAULT_URI: ${{ secrets.AZURE_SIGNING_KEY_VAULT_URI }}
+      AZURE_SIGNING_CLIENT_ID: ${{ secrets.AZURE_SIGNING_CLIENT_ID }}
+      AZURE_SIGNING_TENANT_ID: ${{ secrets.AZURE_SIGNING_TENANT_ID }}
+      AZURE_SIGNING_CLIENT_SECRET: ${{ secrets.AZURE_SIGNING_CLIENT_SECRET }}
+      AZURE_SIGNING_CERT_NAME: ${{ secrets.AZURE_SIGNING_CERT_NAME }}
+      PULUMI_BOT_TOKEN: ${{ secrets.PULUMI_BOT_TOKEN }}
