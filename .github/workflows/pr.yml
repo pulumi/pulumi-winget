@@ -1,7 +1,7 @@
-name: Generate MSI
+name: Pull Request
 
 on:
-  push:
+  pull_request:
     branches:
       - master
 
@@ -9,11 +9,10 @@ jobs:
   build:
     uses: ./.github/workflows/shared.yml
     with:
-      push_manifest: true
+      push_manifest: false
     secrets:
       AZURE_SIGNING_KEY_VAULT_URI: ${{ secrets.AZURE_SIGNING_KEY_VAULT_URI }}
       AZURE_SIGNING_CLIENT_ID: ${{ secrets.AZURE_SIGNING_CLIENT_ID }}
       AZURE_SIGNING_TENANT_ID: ${{ secrets.AZURE_SIGNING_TENANT_ID }}
       AZURE_SIGNING_CLIENT_SECRET: ${{ secrets.AZURE_SIGNING_CLIENT_SECRET }}
       AZURE_SIGNING_CERT_NAME: ${{ secrets.AZURE_SIGNING_CERT_NAME }}
-      PULUMI_BOT_TOKEN: ${{ secrets.PULUMI_BOT_TOKEN }}
