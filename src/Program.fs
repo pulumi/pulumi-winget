@@ -111,9 +111,9 @@ let computeSha256 (file: string) =
     let hashBytes = sha256.ComputeHash(fs)
     Convert.ToHexString(hashBytes)
 
-let generateMsi (keyVaultUri: string) (clientId: string) (tenantId: string) (clientSecret: string) (certName: string) (publish: bool) = 
+let generateMsi () =
     let latestRelease = await (github.Repository.Release.GetLatest("pulumi", "pulumi"))
-    match findWindowsBinaries latestRelease with 
+    match findWindowsBinaries latestRelease with
     | Error errorMessage -> 
         printfn "Error occured while creating the manifest file for pulumi CLI:"
         printfn "%s" errorMessage
@@ -208,27 +208,38 @@ let generateMsi (keyVaultUri: string) (clientId: string) (tenantId: string) (cli
         Shell.exec("light.exe", $"PulumiInstaller.wixobj -o pulumi-{version latestRelease}-windows-x64.msi")
         let msi = resolvePath [ $"pulumi-{version latestRelease}-windows-x64.msi" ]
 
-        let hasVal (v: string) =
-            not (String.IsNullOrWhiteSpace v)
-
-        if (hasVal keyVaultUri) && (hasVal clientId) && (hasVal tenantId) && (hasVal clientSecret) && (hasVal certName) then
-            printfn "Signing MSI..."
-            Shell.exec("AzureSignTool.exe", $"sign -kvu {keyVaultUri} -kvi {clientId} -kvt {tenantId} -kvs {clientSecret} -kvc {certName} -tr http://timestamp.digicert.com -v {msi}")
-
-        let msiChecksum256 = computeSha256 msi
         let info = FileInfo msi
-        printfn "Succesfully created MSI at '%s' (%d bytes)" msi info.Length
+        printfn "Succesfully created unsigned MSI at '%s' (%d bytes)" msi info.Length
 
-        if publish then
+        // Persist the target version so a subsequent `publish msi` invocation
+        // (after the MSI has been signed by azure/artifact-signing-action) can
+        // locate the artifact without re-querying the Pulumi release.
+        let versionPath = resolvePath [ "version.txt" ]
+        File.WriteAllText(versionPath, version latestRelease)
+        printfn $"Written the release version to file {versionPath}"
+        0
+
+let publishMsi () =
+    let versionPath = resolvePath [ "version.txt" ]
+    if not (File.Exists versionPath) then
+        printfn "Expected version.txt at %s — run `generate msi` before `publish msi`." versionPath
+        1
+    else
+        let targetVersion = (File.ReadAllText versionPath).Trim()
+        let msi = resolvePath [ $"pulumi-{targetVersion}-windows-x64.msi" ]
+        if not (File.Exists msi) then
+            printfn "Expected signed MSI at %s — run `generate msi` and the signing step before `publish msi`." msi
+            1
+        else
             match latestMsiRelease() with
-            | Some msiRelease when version msiRelease = version latestRelease  ->
-                printfn "Version v%s of Pulumi MSI is already published, skipping..." (version msiRelease)
+            | Some msiRelease when version msiRelease = targetVersion ->
+                printfn "Version v%s of Pulumi MSI is already published, skipping..." targetVersion
                 0
-
             | _ ->
                 printfn "Publishing asset to GitHub..."
 
-                let releaseInfo = NewRelease($"v{version latestRelease}")
+                let msiChecksum256 = computeSha256 msi
+                let releaseInfo = NewRelease($"v{targetVersion}")
                 let msiRelease = await (github.Repository.Release.Create("pulumi", "pulumi-winget", releaseInfo))
                 let installerAsset = ReleaseAssetUpload()
                 installerAsset.FileName <- Path.GetFileName msi
@@ -243,35 +254,24 @@ let generateMsi (keyVaultUri: string) (clientId: string) (tenantId: string) (cli
                 let uploadedInstaller = await (github.Repository.Release.UploadAsset(msiRelease, installerAsset))
                 let uploadedChecksumFile = await (github.Repository.Release.UploadAsset(msiRelease, checksumAsset))
 
-                printfn $"Released {version latestRelease}: {uploadedInstaller.BrowserDownloadUrl}"
+                printfn $"Released {targetVersion}: {uploadedInstaller.BrowserDownloadUrl}"
                 printfn $"Checksum: {uploadedChecksumFile.BrowserDownloadUrl}"
 
                 let downloadUrlPath = resolvePath [ "download-url.txt" ]
                 File.WriteAllText(downloadUrlPath, uploadedInstaller.BrowserDownloadUrl)
                 printfn $"Written the release download URL to file {downloadUrlPath}"
-
-                let versionPath = resolvePath [ "version.txt" ]
-                File.WriteAllText(versionPath, version latestRelease)
-                printfn $"Written the release version to file {versionPath}"
                 0
-        else
-            printfn "Skipping publishing asset to GitHub (publish=false)"
-            0
 
 [<EntryPoint>]
 let main (args: string[]) = 
     try
-        match args with 
-        | [| "generate"; "msi" |] -> 
+        match args with
+        | [| "generate"; "msi" |] ->
             clean()
-            generateMsi "" "" "" "" "" false
-        | [| "generate"; "msi"; keyVaultUri; clientId; tenantId; clientSecret; certName |] -> 
-            clean()
-            generateMsi keyVaultUri clientId tenantId clientSecret certName false
-        | [| "generate-publish"; "msi"; keyVaultUri; clientId; tenantId; clientSecret; certName |] -> 
-            clean()
-            generateMsi keyVaultUri clientId tenantId clientSecret certName true
-        | [| "clean" |] ->  
+            generateMsi ()
+        | [| "publish"; "msi" |] ->
+            publishMsi ()
+        | [| "clean" |] ->
             clean()
             0
         | otherwise -> 
