@@ -4,6 +4,7 @@ on:
   repository_dispatch:
     types:
       - winget-deploy
+  workflow_dispatch:
 
 jobs:
   deploy:
