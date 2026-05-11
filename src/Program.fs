@@ -209,7 +209,7 @@ let generateMsi () =
         let msi = resolvePath [ $"pulumi-{version latestRelease}-windows-x64.msi" ]
 
         let info = FileInfo msi
-        printfn "Succesfully created unsigned MSI at '%s' (%d bytes)" msi info.Length
+        printfn "Successfully created unsigned MSI at '%s' (%d bytes)" msi info.Length
 
         // Persist the target version so a subsequent `publish msi` invocation
         // (after the MSI has been signed by azure/artifact-signing-action) can
