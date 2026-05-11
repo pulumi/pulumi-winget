@@ -115,7 +115,7 @@ let generateMsi () =
     let latestRelease = await (github.Repository.Release.GetLatest("pulumi", "pulumi"))
     match findWindowsBinaries latestRelease with
     | Error errorMessage -> 
-        printfn "Error occured while creating the manifest file for pulumi CLI:"
+        printfn "Error occurred while creating the manifest file for pulumi CLI:"
         printfn "%s" errorMessage
         1
 
@@ -132,7 +132,7 @@ let generateMsi () =
         let filesFromUnzippedArchive = Directory.EnumerateFiles(pulumiUnzipped, "*.*", SearchOption.AllDirectories)
 
         if Seq.isEmpty filesFromUnzippedArchive then
-            failwith "Error occured while getting files from unzipped Pulumi archive: 0 files found"
+            failwith "Error occurred while getting files from unzipped Pulumi archive: 0 files found"
 
         let fileId (filePath: string) = 
             let fileName = Path.GetFileName filePath
@@ -209,7 +209,7 @@ let generateMsi () =
         let msi = resolvePath [ $"pulumi-{version latestRelease}-windows-x64.msi" ]
 
         let info = FileInfo msi
-        printfn "Succesfully created unsigned MSI at '%s' (%d bytes)" msi info.Length
+        printfn "Successfully created unsigned MSI at '%s' (%d bytes)" msi info.Length
 
         // Persist the target version so a subsequent `publish msi` invocation
         // (after the MSI has been signed by azure/artifact-signing-action) can
@@ -281,26 +281,26 @@ let main (args: string[]) =
     | :? AggregateException as aggregateError when aggregateError.InnerExceptions.Count = 1 -> 
         match aggregateError.InnerExceptions[0] with 
         | :? Octokit.ApiException as githubError -> 
-            printfn "Error occured executing github operation:"
+            printfn "Error occurred executing github operation:"
             printfn "%s" githubError.ApiError.Message
             for error in githubError.ApiError.Errors do
                 printfn "(%s) [%s]: %s" error.Code error.Field error.Message
             1
         
         | error -> 
-            printfn "Error occured while creating the manifest file for pulumi CLI:"
+            printfn "Error occurred while creating the manifest file for pulumi CLI:"
             printfn "%s" error.Message
             printfn "%s" error.StackTrace
             1
     | :? AggregateException as aggregateError -> 
-        printfn "Errors occured while creating the manifest file for pulumi CLI:"
+        printfn "Errors occurred while creating the manifest file for pulumi CLI:"
         for error in aggregateError.InnerExceptions do 
             printfn "%s" error.Message
         
         printfn "%s" aggregateError.StackTrace
         1
     | error -> 
-        printfn "Error occured while creating the manifest file for pulumi CLI:"
+        printfn "Error occurred while creating the manifest file for pulumi CLI:"
         printfn "%s" error.Message
         printfn "%s" error.StackTrace
         1
