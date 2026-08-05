@@ -47,8 +47,12 @@ let version (release: Release) =
 // above an installed 3.x. Every other surface (the release tag, the MSI file name, version.txt and
 // the winget manifest) keeps using the real Pulumi version.
 //
-// 649 * 100 + 99 = 64999, so 650 is the largest round number of minor versions we can fit into one
-// MSI minor version without overflowing the build field.
+// Each MSI minor version holds a "generation" of 650 Pulumi minor versions: 3.649.99 maps to
+// 4.0.64999 and the next release, 3.650.0, rolls over to 4.1.0 and starts the build field again.
+// So there is no Pulumi version this cannot express -- 650 is just the largest round generation
+// that fits, since 649 * 100 + 99 = 64999 stays inside the 65535 build limit. The mapping only runs
+// out of room if a patch version reaches 100 (the highest Pulumi has ever shipped is 4) or the
+// minor version reaches 166,400, both of which fail the build rather than mis-order an upgrade.
 let minorVersionsPerGeneration = 650
 
 let msiProductVersion (pulumiVersion: string) =
@@ -145,7 +149,6 @@ let clean() =
         "pulumi.zip"
         "download-url.txt"
         "version.txt"
-        "msi-version.txt"
         "PulumiInstaller.wxs"
     ]
     for file in filesToDelete do
@@ -221,6 +224,14 @@ let generateMsi () =
                     Wix.directoryId "ProgramFilesFolder" [
                         Wix.directory "PULUMIDIR" "Pulumi" []
                     ]
+
+                    // Show the real Pulumi version in Add/Remove Programs rather than the
+                    // synthetic MSI product version. This has to be a 64-bit component to write
+                    // into the product's own registration, which rules out PULUMIDIR: that lives
+                    // under the 32-bit ProgramFilesFolder, and ICE80 rejects the combination.
+                    Wix.component64 "SetArpDisplayVersion" [
+                        Wix.arpDisplayVersion pulumiVersion
+                    ]
                 ]
 
                 Wix.directoryRef "PULUMIDIR" [
@@ -233,13 +244,16 @@ let generateMsi () =
                         // Required dummy <CreateFolder /> element
                         Wix.createFolder()
                         // Add install folder to PATH
-                        Wix.updateEnvironmentPath "PULUMIDIR"        
+                        Wix.updateEnvironmentPath "PULUMIDIR"
                     ]
                 ]
 
+                Wix.writeRegistryValuesAfterRegisterProduct()
+
                 Wix.feature "MainInstaller" "Installer" [
                     for file in filesFromUnzippedArchive do
-                    Wix.componentRef (componentId file)
+                        Wix.componentRef (componentId file)
+                    Wix.componentRef "SetArpDisplayVersion"
                 ]
 
                 Wix.feature "UpdatePath" "Update PATH" [
@@ -271,13 +285,6 @@ let generateMsi () =
         let versionPath = resolvePath [ "version.txt" ]
         File.WriteAllText(versionPath, pulumiVersion)
         printfn $"Written the release version to file {versionPath}"
-
-        // The winget manifest has to map the version shown in Add/Remove Programs (which Windows
-        // Installer takes from the synthetic MSI product version) back onto the Pulumi version,
-        // otherwise winget cannot tell which version is installed.
-        let msiVersionPath = resolvePath [ "msi-version.txt" ]
-        File.WriteAllText(msiVersionPath, msiVersion)
-        printfn $"Written the MSI product version to file {msiVersionPath}"
         0
 
 let publishMsi () =

@@ -119,7 +119,19 @@ let component' (id: string) (elements: obj seq) =
             yield element |> box
     })
 
-let file (id: string) (source: string) = 
+// The package is x64, so Windows Installer registers the product in the 64-bit registry view. A
+// component writing into that registration has to be 64-bit too, otherwise its values land under
+// WOW6432Node instead and the product's own values are left untouched.
+let component64 (id: string) (elements: obj seq) =
+    XElement.create(ns + "Component", seq {
+        yield XAttribute.create("Id", id) |> box
+        yield XAttribute.create("Guid", Guid.NewGuid().ToString()) |> box
+        yield XAttribute.create("Win64", "yes") |> box
+        for element in elements do
+            yield element |> box
+    })
+
+let file (id: string) (source: string) =
     XElement.create(ns + "File", seq {
         XAttribute.create("Id", id)
         XAttribute.create("Source", source)
@@ -139,8 +151,29 @@ let feature (id: string) (title: string) (elements: obj seq) =
             yield element
     })
 
+// Windows Installer derives the version shown in Add/Remove Programs from ProductVersion, which
+// for us is synthetic (see msiProductVersion in Program.fs). There is no property to override it --
+// ARPDISPLAYVERSION does not exist -- but the RegisterProduct action just writes it into the
+// product's uninstall key, so we can write the real Pulumi version over the top afterwards.
+let arpDisplayVersion (pulumiVersion: string) =
+    XElement.create(ns + "RegistryValue",
+        XAttribute.create("Root", "HKLM"),
+        XAttribute.create("Key", @"Software\Microsoft\Windows\CurrentVersion\Uninstall\[ProductCode]"),
+        XAttribute.create("Name", "DisplayVersion"),
+        XAttribute.create("Type", "string"),
+        XAttribute.create("Value", pulumiVersion),
+        XAttribute.create("KeyPath", "yes"))
+
+// WriteRegistryValues normally runs at 5000, before RegisterProduct writes the uninstall key at
+// 6100, so anything we write there would be overwritten. Moving it to 6150 puts our DisplayVersion
+// last. The only registry value in this package is the one above -- the PATH entry goes through the
+// Environment table, which WriteEnvironmentStrings handles separately -- so nothing else moves.
+let writeRegistryValuesAfterRegisterProduct() =
+    XElement.create(ns + "InstallExecuteSequence",
+        XElement.create(ns + "WriteRegistryValues", XAttribute.create("Sequence", "6150")))
+
 // https://stackoverflow.com/questions/11400748/unable-to-update-path-environment-variable-using-wix
-let updateEnvironmentPath (directoryRef: string) = 
+let updateEnvironmentPath (directoryRef: string) =
     XElement.create(ns + "Environment", 
         XAttribute.create("Id", "PATH"),
         XAttribute.create("Name", "PATH"),

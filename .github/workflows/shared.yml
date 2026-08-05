@@ -84,9 +84,5 @@ jobs:
           $github_token = "${{ secrets.PULUMI_BOT_TOKEN }}"
           $downloadUrl = Get-Content -Path ./src/download-url.txt
           $version = Get-Content -Path ./src/version.txt
-          # The MSI carries a synthetic product version, which is what Windows records in
-          # Add/Remove Programs. winget correlates installed packages on that value, so the
-          # manifest has to map it back onto the real Pulumi version.
-          $displayVersion = Get-Content -Path ./src/msi-version.txt
           iwr https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
-          .\wingetcreate.exe update Pulumi.Pulumi --urls $downloadUrl --version $version --display-version $displayVersion --token $github_token --submit
+          .\wingetcreate.exe update Pulumi.Pulumi --urls $downloadUrl --version $version --token $github_token --submit
