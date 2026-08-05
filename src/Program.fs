@@ -30,6 +30,54 @@ let version (release: Release) =
     else 
         ""
 
+// Windows Installer stores ProductVersion as a packed DWORD (8 bits of major, 8 bits of minor and
+// 16 bits of build) so the highest version it can express is 255.255.65535. Pulumi outgrew that
+// with v3.256.0, which WiX rejects at compile time with CNDL0242.
+//
+// The only thing Windows Installer uses ProductVersion for is ordering upgrades, so we map the
+// Pulumi version onto a synthetic MSI version that is guaranteed to keep increasing. The Pulumi
+// major version gets the MSI major field (offset by one, so the first mapped version outranks the
+// literal 3.255.0 we already shipped) and the minor/patch pair is packed into the two remaining
+// fields in base 100:
+//
+//     3.255.0 -> 4.0.25500        3.257.1 -> 4.0.25701
+//     3.256.0 -> 4.0.25600        4.0.0   -> 5.0.0
+//
+// Giving the Pulumi major version a field of its own is what keeps a future Pulumi 4.0.0 ordered
+// above an installed 3.x. Every other surface (the release tag, the MSI file name, version.txt and
+// the winget manifest) keeps using the real Pulumi version.
+//
+// 649 * 100 + 99 = 64999, so 650 is the largest round number of minor versions we can fit into one
+// MSI minor version without overflowing the build field.
+let minorVersionsPerGeneration = 650
+
+let msiProductVersion (pulumiVersion: string) =
+    let parseField (name: string) (value: string) =
+        match Int32.TryParse value with
+        | true, parsed when parsed >= 0 -> parsed
+        | _ -> failwithf "Cannot derive an MSI product version from '%s': the %s version '%s' is not a number" pulumiVersion name value
+
+    match pulumiVersion.Split "." with
+    | [| major; minor; patch |] ->
+        let major = parseField "major" major
+        let minor = parseField "minor" minor
+        let patch = parseField "patch" patch
+
+        if patch > 99 then
+            failwithf "Cannot derive an MSI product version from '%s': a patch version above 99 would collide with the next minor version" pulumiVersion
+
+        let msiMajor = major + 1
+        let msiMinor = minor / minorVersionsPerGeneration
+        let msiBuild = (minor % minorVersionsPerGeneration) * 100 + patch
+
+        if msiMajor > 255 || msiMinor > 255 then
+            failwithf "Cannot derive an MSI product version from '%s': it no longer fits the MSI limit of 255.255.65535" pulumiVersion
+
+        $"{msiMajor}.{msiMinor}.{msiBuild}"
+
+    | _ ->
+        failwithf "Cannot derive an MSI product version from '%s': expected a major.minor.patch version" pulumiVersion
+
 type InstallerAsset = { DownloadUrl: string; Sha512: string }
 
 let findWindowsBinaries (release: Release) : Result<InstallerAsset, string> = 
@@ -97,6 +145,7 @@ let clean() =
         "pulumi.zip"
         "download-url.txt"
         "version.txt"
+        "msi-version.txt"
         "PulumiInstaller.wxs"
     ]
     for file in filesToDelete do
@@ -119,7 +168,12 @@ let generateMsi () =
         printfn "%s" errorMessage
         1
 
-    | Ok windowsBinaries -> 
+    | Ok windowsBinaries ->
+        let pulumiVersion = version latestRelease
+        // The MSI product version is synthetic, see msiProductVersion above
+        let msiVersion = msiProductVersion pulumiVersion
+        printfn "Pulumi %s maps onto MSI product version %s" pulumiVersion msiVersion
+
         // Download ZIP file
         printfn "Downloading Pulumi binaries from %s" windowsBinaries.DownloadUrl
         let pulumiZip = await (httpClient.GetByteArrayAsync(windowsBinaries.DownloadUrl))
@@ -149,7 +203,7 @@ let generateMsi () =
         // see below for allowed elements
         // https://wixtoolset.org/documentation/manual/v3/xsd/wix/wix.html
         let wixDefinition = Wix.installer [
-            Wix.product (version latestRelease) (formatProductCode productCode) [
+            Wix.product msiVersion (formatProductCode productCode) [
                 Wix.package [ 
                     Wix.attr "Platform" "x64"
                     Wix.attr "Description" "Pulumi CLI for managing cloud infrastructure"
@@ -205,8 +259,8 @@ let generateMsi () =
 
         // TODO: check candle/light already exist before executing them
         Shell.exec("candle.exe", "PulumiInstaller.wxs")
-        Shell.exec("light.exe", $"PulumiInstaller.wixobj -o pulumi-{version latestRelease}-windows-x64.msi")
-        let msi = resolvePath [ $"pulumi-{version latestRelease}-windows-x64.msi" ]
+        Shell.exec("light.exe", $"PulumiInstaller.wixobj -o pulumi-{pulumiVersion}-windows-x64.msi")
+        let msi = resolvePath [ $"pulumi-{pulumiVersion}-windows-x64.msi" ]
 
         let info = FileInfo msi
         printfn "Successfully created unsigned MSI at '%s' (%d bytes)" msi info.Length
@@ -215,8 +269,15 @@ let generateMsi () =
         // (after the MSI has been signed by azure/artifact-signing-action) can
         // locate the artifact without re-querying the Pulumi release.
         let versionPath = resolvePath [ "version.txt" ]
-        File.WriteAllText(versionPath, version latestRelease)
+        File.WriteAllText(versionPath, pulumiVersion)
         printfn $"Written the release version to file {versionPath}"
+
+        // The winget manifest has to map the version shown in Add/Remove Programs (which Windows
+        // Installer takes from the synthetic MSI product version) back onto the Pulumi version,
+        // otherwise winget cannot tell which version is installed.
+        let msiVersionPath = resolvePath [ "msi-version.txt" ]
+        File.WriteAllText(msiVersionPath, msiVersion)
+        printfn $"Written the MSI product version to file {msiVersionPath}"
         0
 
 let publishMsi () =
@@ -273,6 +334,10 @@ let main (args: string[]) =
             publishMsi ()
         | [| "clean" |] ->
             clean()
+            0
+        | [| "msi-version"; pulumiVersion |] ->
+            // Lets you check the version mapping without WiX, or Windows, in sight
+            printfn "%s" (msiProductVersion pulumiVersion)
             0
         | otherwise -> 
             printfn "Unknown arguments provided: %A" otherwise
