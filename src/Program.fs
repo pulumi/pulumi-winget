@@ -30,6 +30,58 @@ let version (release: Release) =
     else 
         ""
 
+// Windows Installer stores ProductVersion as a packed DWORD (8 bits of major, 8 bits of minor and
+// 16 bits of build) so the highest version it can express is 255.255.65535. Pulumi outgrew that
+// with v3.256.0, which WiX rejects at compile time with CNDL0242.
+//
+// The only thing Windows Installer uses ProductVersion for is ordering upgrades, so we map the
+// Pulumi version onto a synthetic MSI version that is guaranteed to keep increasing. The Pulumi
+// major version gets the MSI major field (offset by one, so the first mapped version outranks the
+// literal 3.255.0 we already shipped) and the minor/patch pair is packed into the two remaining
+// fields in base 100:
+//
+//     3.255.0 -> 4.0.25500        3.257.1 -> 4.0.25701
+//     3.256.0 -> 4.0.25600        4.0.0   -> 5.0.0
+//
+// Giving the Pulumi major version a field of its own is what keeps a future Pulumi 4.0.0 ordered
+// above an installed 3.x. Every other surface (the release tag, the MSI file name, version.txt and
+// the winget manifest) keeps using the real Pulumi version.
+//
+// Each MSI minor version holds a "generation" of 650 Pulumi minor versions: 3.649.99 maps to
+// 4.0.64999 and the next release, 3.650.0, rolls over to 4.1.0 and starts the build field again.
+// So there is no Pulumi version this cannot express -- 650 is just the largest round generation
+// that fits, since 649 * 100 + 99 = 64999 stays inside the 65535 build limit. The mapping only runs
+// out of room if a patch version reaches 100 (the highest Pulumi has ever shipped is 4) or the
+// minor version reaches 166,400, both of which fail the build rather than mis-order an upgrade.
+let minorVersionsPerGeneration = 650
+
+let msiProductVersion (pulumiVersion: string) =
+    let parseField (name: string) (value: string) =
+        match Int32.TryParse value with
+        | true, parsed when parsed >= 0 -> parsed
+        | _ -> failwithf "Cannot derive an MSI product version from '%s': the %s version '%s' is not a number" pulumiVersion name value
+
+    match pulumiVersion.Split "." with
+    | [| major; minor; patch |] ->
+        let major = parseField "major" major
+        let minor = parseField "minor" minor
+        let patch = parseField "patch" patch
+
+        if patch > 99 then
+            failwithf "Cannot derive an MSI product version from '%s': a patch version above 99 would collide with the next minor version" pulumiVersion
+
+        let msiMajor = major + 1
+        let msiMinor = minor / minorVersionsPerGeneration
+        let msiBuild = (minor % minorVersionsPerGeneration) * 100 + patch
+
+        if msiMajor > 255 || msiMinor > 255 then
+            failwithf "Cannot derive an MSI product version from '%s': it no longer fits the MSI limit of 255.255.65535" pulumiVersion
+
+        $"{msiMajor}.{msiMinor}.{msiBuild}"
+
+    | _ ->
+        failwithf "Cannot derive an MSI product version from '%s': expected a major.minor.patch version" pulumiVersion
+
 type InstallerAsset = { DownloadUrl: string; Sha512: string }
 
 let findWindowsBinaries (release: Release) : Result<InstallerAsset, string> = 
@@ -119,7 +171,12 @@ let generateMsi () =
         printfn "%s" errorMessage
         1
 
-    | Ok windowsBinaries -> 
+    | Ok windowsBinaries ->
+        let pulumiVersion = version latestRelease
+        // The MSI product version is synthetic, see msiProductVersion above
+        let msiVersion = msiProductVersion pulumiVersion
+        printfn "Pulumi %s maps onto MSI product version %s" pulumiVersion msiVersion
+
         // Download ZIP file
         printfn "Downloading Pulumi binaries from %s" windowsBinaries.DownloadUrl
         let pulumiZip = await (httpClient.GetByteArrayAsync(windowsBinaries.DownloadUrl))
@@ -149,7 +206,7 @@ let generateMsi () =
         // see below for allowed elements
         // https://wixtoolset.org/documentation/manual/v3/xsd/wix/wix.html
         let wixDefinition = Wix.installer [
-            Wix.product (version latestRelease) (formatProductCode productCode) [
+            Wix.product msiVersion (formatProductCode productCode) [
                 Wix.package [ 
                     Wix.attr "Platform" "x64"
                     Wix.attr "Description" "Pulumi CLI for managing cloud infrastructure"
@@ -167,6 +224,14 @@ let generateMsi () =
                     Wix.directoryId "ProgramFilesFolder" [
                         Wix.directory "PULUMIDIR" "Pulumi" []
                     ]
+
+                    // Show the real Pulumi version in Add/Remove Programs rather than the
+                    // synthetic MSI product version. This has to be a 64-bit component to write
+                    // into the product's own registration, which rules out PULUMIDIR: that lives
+                    // under the 32-bit ProgramFilesFolder, and ICE80 rejects the combination.
+                    Wix.component64 "SetArpDisplayVersion" [
+                        Wix.arpDisplayVersion pulumiVersion
+                    ]
                 ]
 
                 Wix.directoryRef "PULUMIDIR" [
@@ -179,13 +244,16 @@ let generateMsi () =
                         // Required dummy <CreateFolder /> element
                         Wix.createFolder()
                         // Add install folder to PATH
-                        Wix.updateEnvironmentPath "PULUMIDIR"        
+                        Wix.updateEnvironmentPath "PULUMIDIR"
                     ]
                 ]
 
+                Wix.writeRegistryValuesAfterRegisterProduct()
+
                 Wix.feature "MainInstaller" "Installer" [
                     for file in filesFromUnzippedArchive do
-                    Wix.componentRef (componentId file)
+                        Wix.componentRef (componentId file)
+                    Wix.componentRef "SetArpDisplayVersion"
                 ]
 
                 Wix.feature "UpdatePath" "Update PATH" [
@@ -205,8 +273,8 @@ let generateMsi () =
 
         // TODO: check candle/light already exist before executing them
         Shell.exec("candle.exe", "PulumiInstaller.wxs")
-        Shell.exec("light.exe", $"PulumiInstaller.wixobj -o pulumi-{version latestRelease}-windows-x64.msi")
-        let msi = resolvePath [ $"pulumi-{version latestRelease}-windows-x64.msi" ]
+        Shell.exec("light.exe", $"PulumiInstaller.wixobj -o pulumi-{pulumiVersion}-windows-x64.msi")
+        let msi = resolvePath [ $"pulumi-{pulumiVersion}-windows-x64.msi" ]
 
         let info = FileInfo msi
         printfn "Successfully created unsigned MSI at '%s' (%d bytes)" msi info.Length
@@ -215,7 +283,7 @@ let generateMsi () =
         // (after the MSI has been signed by azure/artifact-signing-action) can
         // locate the artifact without re-querying the Pulumi release.
         let versionPath = resolvePath [ "version.txt" ]
-        File.WriteAllText(versionPath, version latestRelease)
+        File.WriteAllText(versionPath, pulumiVersion)
         printfn $"Written the release version to file {versionPath}"
         0
 
@@ -273,6 +341,10 @@ let main (args: string[]) =
             publishMsi ()
         | [| "clean" |] ->
             clean()
+            0
+        | [| "msi-version"; pulumiVersion |] ->
+            // Lets you check the version mapping without WiX, or Windows, in sight
+            printfn "%s" (msiProductVersion pulumiVersion)
             0
         | otherwise -> 
             printfn "Unknown arguments provided: %A" otherwise
