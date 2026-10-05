@@ -82,29 +82,43 @@ let msiProductVersion (pulumiVersion: string) =
     | _ ->
         failwithf "Cannot derive an MSI product version from '%s': expected a major.minor.patch version" pulumiVersion
 
+type Architecture = { Name: string; InstallerVersion: string }
+
+let x64 = { Name = "x64"; InstallerVersion = "200" }
+// Windows Installer only understands the Arm64 platform from schema 500 onwards
+let arm64 = { Name = "arm64"; InstallerVersion = "500" }
+let architectures = [ x64; arm64 ]
+
+let msiFileName (pulumiVersion: string) (arch: Architecture) = $"pulumi-{pulumiVersion}-windows-{arch.Name}.msi"
+
+// checksum-256.txt predates the arm64 installer, so it keeps holding the x64 checksum
+let checksumFileName (arch: Architecture) =
+    if arch = x64 then "checksum-256.txt" else $"checksum-256-{arch.Name}.txt"
+
 type InstallerAsset = { DownloadUrl: string; Sha512: string }
 
-let findWindowsBinaries (release: Release) : Result<InstallerAsset, string> = 
+let findWindowsBinaries (release: Release) (arch: Architecture) : Result<InstallerAsset, string> = 
     let currentVersion = version release
+    let archiveName = $"pulumi-v{currentVersion}-windows-{arch.Name}.zip"
     let checksums = 
         release.Assets
         |> Seq.tryFind (fun asset -> asset.Name = $"SHA512SUMS")
 
     let windowsBuild = 
         release.Assets
-        |> Seq.tryFind (fun asset -> asset.Name = $"pulumi-v{currentVersion}-windows-x64.zip")
+        |> Seq.tryFind (fun asset -> asset.Name = archiveName)
 
     if checksums.IsNone then 
         Error $"Checksums file SHA512SUMS was not found"
     elif windowsBuild.IsNone then
-        Error $"Windows build pulumi-v{currentVersion}-windows-x64.zip was not found"
+        Error $"Windows build {archiveName} was not found"
     else 
         let contents = await (httpClient.GetStringAsync checksums.Value.BrowserDownloadUrl)
         contents.Split "\n"
-        |> Array.tryFind (fun line -> line.EndsWith $"pulumi-v{currentVersion}-windows-x64.zip")
+        |> Array.tryFind (fun line -> line.EndsWith archiveName)
         |> function 
             | None ->
-                Error "Could not find the installer SHA512 for the windows build"
+                Error $"Could not find the installer SHA512 for the windows {arch.Name} build"
 
             | Some line -> 
                 let parts = line.Split "  "
@@ -140,16 +154,18 @@ let latestMsiRelease() =
 
 let clean() = 
     printfn "Cleaning up artifacts"
-    let unzippedPulumiPath = resolvePath [ "pulumi"]
-    if Directory.Exists unzippedPulumiPath then 
-        printfn "Deleting %s" unzippedPulumiPath
-        Fake.IO.Shell.deleteDir unzippedPulumiPath
+    for arch in architectures do
+        let unzippedPulumiPath = resolvePath [ $"pulumi-{arch.Name}" ]
+        if Directory.Exists unzippedPulumiPath then 
+            printfn "Deleting %s" unzippedPulumiPath
+            Fake.IO.Shell.deleteDir unzippedPulumiPath
     
     let filesToDelete = [
-        "pulumi.zip"
         "download-url.txt"
         "version.txt"
-        "PulumiInstaller.wxs"
+        for arch in architectures do
+            $"pulumi-{arch.Name}.zip"
+            $"PulumiInstaller-{arch.Name}.wxs"
     ]
     for file in filesToDelete do
         let filePath = resolvePath [ file ]
@@ -163,121 +179,129 @@ let computeSha256 (file: string) =
     let hashBytes = sha256.ComputeHash(fs)
     Convert.ToHexString(hashBytes)
 
+let buildMsi (pulumiVersion: string) (msiVersion: string) (arch: Architecture) (windowsBinaries: InstallerAsset) =
+    // Download ZIP file
+    printfn "Downloading Pulumi %s binaries from %s" arch.Name windowsBinaries.DownloadUrl
+    let pulumiZip = await (httpClient.GetByteArrayAsync(windowsBinaries.DownloadUrl))
+    let pulumiZipOutput = resolvePath [ $"pulumi-{arch.Name}.zip" ]
+    File.WriteAllBytes(pulumiZipOutput, pulumiZip)
+    // Unzip into ./pulumi-<arch>
+    let pulumiUnzipped = resolvePath [ $"pulumi-{arch.Name}" ]
+    ZipFile.ExtractToDirectory(pulumiZipOutput, pulumiUnzipped)
+    
+    let filesFromUnzippedArchive = Directory.EnumerateFiles(pulumiUnzipped, "*.*", SearchOption.AllDirectories)
+
+    if Seq.isEmpty filesFromUnzippedArchive then
+        failwith "Error occurred while getting files from unzipped Pulumi archive: 0 files found"
+
+    let fileId (filePath: string) = 
+        let fileName = Path.GetFileName filePath
+        // dashes are illegal in WiX files
+        // Identifiers may contain ASCII characters A-Z, a-z, digits, underscores (_), or periods (.).  Every identifier must begin with either a letter or an underscore.
+        fileName.Replace("-", "_")
+
+    let componentId (filePath) = $"comp_{fileId filePath}"
+
+    // Random guid used for both the MSI and the manifest
+    let productCode = Guid.NewGuid()
+
+    // Create installer definition
+    // see below for allowed elements
+    // https://wixtoolset.org/documentation/manual/v3/xsd/wix/wix.html
+    let wixDefinition = Wix.installer [
+        Wix.product msiVersion (formatProductCode productCode) [
+            Wix.package [ 
+                Wix.attr "Platform" arch.Name
+                Wix.attr "Description" "Pulumi CLI for managing cloud infrastructure"
+                Wix.attr "InstallerVersion" arch.InstallerVersion
+                Wix.attr "Compressed" "yes"
+            ]
+
+            // Tells the installer to embed all source files
+            Wix.mediaTemplate [ Wix.attr "EmbedCab" "yes" ]
+
+            // Installation of new version will uninstall old version (if found)
+            Wix.majorUpgrade [ Wix.attr "DowngradeErrorMessage" "Can't downgrade." ]
+
+            Wix.directory "TARGETDIR" "SourceDir" [
+                Wix.directoryId "ProgramFilesFolder" [
+                    Wix.directory "PULUMIDIR" "Pulumi" []
+                ]
+
+                // Show the real Pulumi version in Add/Remove Programs rather than the
+                // synthetic MSI product version. This has to be a 64-bit component to write
+                // into the product's own registration, which rules out PULUMIDIR: that lives
+                // under the 32-bit ProgramFilesFolder, and ICE80 rejects the combination.
+                Wix.component64 "SetArpDisplayVersion" [
+                    Wix.arpDisplayVersion pulumiVersion
+                ]
+            ]
+
+            Wix.directoryRef "PULUMIDIR" [
+                for file in filesFromUnzippedArchive do
+                    Wix.component' (componentId file) [
+                        Wix.file (fileId file) file
+                    ]
+
+                Wix.component' "SetEnvironment" [
+                    // Required dummy <CreateFolder /> element
+                    Wix.createFolder()
+                    // Add install folder to PATH
+                    Wix.updateEnvironmentPath "PULUMIDIR"
+                ]
+            ]
+
+            Wix.writeRegistryValuesAfterRegisterProduct()
+
+            Wix.feature "MainInstaller" "Installer" [
+                for file in filesFromUnzippedArchive do
+                    Wix.componentRef (componentId file)
+                Wix.componentRef "SetArpDisplayVersion"
+            ]
+
+            Wix.feature "UpdatePath" "Update PATH" [
+                Wix.componentRef "SetEnvironment"
+            ]
+        ]
+    ]
+    
+
+    let wixName = $"PulumiInstaller-{arch.Name}"
+    let wixOutput = resolvePath [ $"{wixName}.wxs" ]
+
+    wixDefinition.Save wixOutput
+
+    printfn "Written WixInstaller definition:"
+
+    System.Console.WriteLine(File.ReadAllText wixOutput)
+
+    // TODO: check candle/light already exist before executing them
+    Shell.exec("candle.exe", $"{wixName}.wxs")
+    Shell.exec("light.exe", $"{wixName}.wixobj -o {msiFileName pulumiVersion arch}")
+    let msi = resolvePath [ msiFileName pulumiVersion arch ]
+
+    let info = FileInfo msi
+    printfn "Successfully created unsigned MSI at '%s' (%d bytes)" msi info.Length
+
 let generateMsi () =
     let latestRelease = await (github.Repository.Release.GetLatest("pulumi", "pulumi"))
-    match findWindowsBinaries latestRelease with
-    | Error errorMessage -> 
+    let binaries = architectures |> List.map (fun arch -> arch, findWindowsBinaries latestRelease arch)
+    let errors = binaries |> List.choose (function _, Error errorMessage -> Some errorMessage | _ -> None)
+    if not errors.IsEmpty then
         printfn "Error occurred while creating the manifest file for pulumi CLI:"
-        printfn "%s" errorMessage
+        for errorMessage in errors do
+            printfn "%s" errorMessage
         1
-
-    | Ok windowsBinaries ->
+    else
         let pulumiVersion = version latestRelease
         // The MSI product version is synthetic, see msiProductVersion above
         let msiVersion = msiProductVersion pulumiVersion
         printfn "Pulumi %s maps onto MSI product version %s" pulumiVersion msiVersion
 
-        // Download ZIP file
-        printfn "Downloading Pulumi binaries from %s" windowsBinaries.DownloadUrl
-        let pulumiZip = await (httpClient.GetByteArrayAsync(windowsBinaries.DownloadUrl))
-        let pulumiZipOutput = resolvePath [ "pulumi.zip" ]
-        File.WriteAllBytes(pulumiZipOutput, pulumiZip)
-        // Unzip into ./pulumi
-        let pulumiUnzipped = resolvePath [ "pulumi" ]
-        ZipFile.ExtractToDirectory(pulumiZipOutput, pulumiUnzipped)
-        
-        let filesFromUnzippedArchive = Directory.EnumerateFiles(pulumiUnzipped, "*.*", SearchOption.AllDirectories)
-
-        if Seq.isEmpty filesFromUnzippedArchive then
-            failwith "Error occurred while getting files from unzipped Pulumi archive: 0 files found"
-
-        let fileId (filePath: string) = 
-            let fileName = Path.GetFileName filePath
-            // dashes are illegal in WiX files
-            // Identifiers may contain ASCII characters A-Z, a-z, digits, underscores (_), or periods (.).  Every identifier must begin with either a letter or an underscore.
-            fileName.Replace("-", "_")
-
-        let componentId (filePath) = $"comp_{fileId filePath}"
-
-        // Random guid used for both the MSI and the manifest
-        let productCode = Guid.NewGuid()
-
-        // Create installer definition
-        // see below for allowed elements
-        // https://wixtoolset.org/documentation/manual/v3/xsd/wix/wix.html
-        let wixDefinition = Wix.installer [
-            Wix.product msiVersion (formatProductCode productCode) [
-                Wix.package [ 
-                    Wix.attr "Platform" "x64"
-                    Wix.attr "Description" "Pulumi CLI for managing cloud infrastructure"
-                    Wix.attr "InstallerVersion" "200"
-                    Wix.attr "Compressed" "yes"
-                ]
-
-                // Tells the installer to embed all source files
-                Wix.mediaTemplate [ Wix.attr "EmbedCab" "yes" ]
-
-                // Installation of new version will uninstall old version (if found)
-                Wix.majorUpgrade [ Wix.attr "DowngradeErrorMessage" "Can't downgrade." ]
-
-                Wix.directory "TARGETDIR" "SourceDir" [
-                    Wix.directoryId "ProgramFilesFolder" [
-                        Wix.directory "PULUMIDIR" "Pulumi" []
-                    ]
-
-                    // Show the real Pulumi version in Add/Remove Programs rather than the
-                    // synthetic MSI product version. This has to be a 64-bit component to write
-                    // into the product's own registration, which rules out PULUMIDIR: that lives
-                    // under the 32-bit ProgramFilesFolder, and ICE80 rejects the combination.
-                    Wix.component64 "SetArpDisplayVersion" [
-                        Wix.arpDisplayVersion pulumiVersion
-                    ]
-                ]
-
-                Wix.directoryRef "PULUMIDIR" [
-                    for file in filesFromUnzippedArchive do
-                        Wix.component' (componentId file) [
-                            Wix.file (fileId file) file
-                        ]
-
-                    Wix.component' "SetEnvironment" [
-                        // Required dummy <CreateFolder /> element
-                        Wix.createFolder()
-                        // Add install folder to PATH
-                        Wix.updateEnvironmentPath "PULUMIDIR"
-                    ]
-                ]
-
-                Wix.writeRegistryValuesAfterRegisterProduct()
-
-                Wix.feature "MainInstaller" "Installer" [
-                    for file in filesFromUnzippedArchive do
-                        Wix.componentRef (componentId file)
-                    Wix.componentRef "SetArpDisplayVersion"
-                ]
-
-                Wix.feature "UpdatePath" "Update PATH" [
-                    Wix.componentRef "SetEnvironment"
-                ]
-            ]
-        ]
-        
-
-        let wixOutput = resolvePath [ "PulumiInstaller.wxs" ]
-
-        wixDefinition.Save wixOutput
-
-        printfn "Written WixInstaller definition:"
-
-        System.Console.WriteLine(File.ReadAllText wixOutput)
-
-        // TODO: check candle/light already exist before executing them
-        Shell.exec("candle.exe", "PulumiInstaller.wxs")
-        Shell.exec("light.exe", $"PulumiInstaller.wixobj -o pulumi-{pulumiVersion}-windows-x64.msi")
-        let msi = resolvePath [ $"pulumi-{pulumiVersion}-windows-x64.msi" ]
-
-        let info = FileInfo msi
-        printfn "Successfully created unsigned MSI at '%s' (%d bytes)" msi info.Length
+        for arch, windowsBinaries in binaries do
+            match windowsBinaries with
+            | Ok windowsBinaries -> buildMsi pulumiVersion msiVersion arch windowsBinaries
+            | Error _ -> ()
 
         // Persist the target version so a subsequent `publish msi` invocation
         // (after the MSI has been signed by azure/artifact-signing-action) can
@@ -294,40 +318,48 @@ let publishMsi () =
         1
     else
         let targetVersion = (File.ReadAllText versionPath).Trim()
-        let msi = resolvePath [ $"pulumi-{targetVersion}-windows-x64.msi" ]
-        if not (File.Exists msi) then
+        let msis = architectures |> List.map (fun arch -> arch, resolvePath [ msiFileName targetVersion arch ])
+        match msis |> List.tryFind (fun (_, msi) -> not (File.Exists msi)) with
+        | Some (_, msi) ->
             printfn "Expected signed MSI at %s — run `generate msi` and the signing step before `publish msi`." msi
             1
-        else
+        | None ->
             match latestMsiRelease() with
             | Some msiRelease when version msiRelease = targetVersion ->
                 printfn "Version v%s of Pulumi MSI is already published, skipping..." targetVersion
                 0
             | _ ->
-                printfn "Publishing asset to GitHub..."
+                printfn "Publishing assets to GitHub..."
 
-                let msiChecksum256 = computeSha256 msi
                 let releaseInfo = NewRelease($"v{targetVersion}")
                 let msiRelease = await (github.Repository.Release.Create("pulumi", "pulumi-winget", releaseInfo))
-                let installerAsset = ReleaseAssetUpload()
-                installerAsset.FileName <- Path.GetFileName msi
-                installerAsset.ContentType <- "application/msi"
-                installerAsset.RawData <- File.OpenRead(msi)
 
-                let checksumAsset = ReleaseAssetUpload()
-                checksumAsset.FileName <- "checksum-256.txt"
-                checksumAsset.ContentType <- "text/plain"
-                checksumAsset.RawData <- new MemoryStream(Encoding.UTF8.GetBytes(msiChecksum256))
+                let downloadUrls = [
+                    for arch, msi in msis do
+                        let msiChecksum256 = computeSha256 msi
+                        let installerAsset = ReleaseAssetUpload()
+                        installerAsset.FileName <- Path.GetFileName msi
+                        installerAsset.ContentType <- "application/msi"
+                        installerAsset.RawData <- File.OpenRead(msi)
 
-                let uploadedInstaller = await (github.Repository.Release.UploadAsset(msiRelease, installerAsset))
-                let uploadedChecksumFile = await (github.Repository.Release.UploadAsset(msiRelease, checksumAsset))
+                        let checksumAsset = ReleaseAssetUpload()
+                        checksumAsset.FileName <- checksumFileName arch
+                        checksumAsset.ContentType <- "text/plain"
+                        checksumAsset.RawData <- new MemoryStream(Encoding.UTF8.GetBytes(msiChecksum256))
 
-                printfn $"Released {targetVersion}: {uploadedInstaller.BrowserDownloadUrl}"
-                printfn $"Checksum: {uploadedChecksumFile.BrowserDownloadUrl}"
+                        let uploadedInstaller = await (github.Repository.Release.UploadAsset(msiRelease, installerAsset))
+                        let uploadedChecksumFile = await (github.Repository.Release.UploadAsset(msiRelease, checksumAsset))
+
+                        printfn $"Released {targetVersion} ({arch.Name}): {uploadedInstaller.BrowserDownloadUrl}"
+                        printfn $"Checksum: {uploadedChecksumFile.BrowserDownloadUrl}"
+
+                        // wingetcreate takes the architecture override as <url>|<architecture>
+                        $"{uploadedInstaller.BrowserDownloadUrl}|{arch.Name}"
+                ]
 
                 let downloadUrlPath = resolvePath [ "download-url.txt" ]
-                File.WriteAllText(downloadUrlPath, uploadedInstaller.BrowserDownloadUrl)
-                printfn $"Written the release download URL to file {downloadUrlPath}"
+                File.WriteAllLines(downloadUrlPath, downloadUrls)
+                printfn $"Written the release download URLs to file {downloadUrlPath}"
                 0
 
 [<EntryPoint>]
