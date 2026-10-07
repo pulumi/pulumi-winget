@@ -330,6 +330,32 @@ let publishMsi () =
                 printfn $"Written the release download URL to file {downloadUrlPath}"
                 0
 
+// `winget install pulumi` only resolves straight to our package when the manifest has a `pulumi`
+// moniker; without one winget falls back to a name search, which fails as soon as another package
+// matches. wingetcreate's `update` command copies the previous version's metadata forward but has no
+// way to set a moniker, so the release workflow runs this against the manifest it generates before
+// submitting it. Once a published version carries the moniker, this finds it and changes nothing.
+let ensureMoniker (manifestDir: string) =
+    let moniker = "pulumi"
+    let manifestDir = Path.GetFullPath manifestDir
+    if not (Directory.Exists manifestDir) then
+        printfn "Manifest directory %s does not exist" manifestDir
+        1
+    else
+        match Manifest.findDefaultLocaleManifests manifestDir with
+        | [ manifestFile ] ->
+            match Manifest.ensureMoniker moniker manifestFile with
+            | Manifest.AlreadySet -> printfn "%s already has the moniker '%s'" manifestFile moniker
+            | Manifest.Added -> printfn "Added the moniker '%s' to %s" moniker manifestFile
+            | Manifest.Replaced previous -> printfn "Replaced the moniker '%s' with '%s' in %s" previous moniker manifestFile
+            0
+        | [] ->
+            printfn "Found no defaultLocale manifest in %s" manifestDir
+            1
+        | manifestFiles ->
+            printfn "Expected one defaultLocale manifest in %s but found %d: %A" manifestDir manifestFiles.Length manifestFiles
+            1
+
 [<EntryPoint>]
 let main (args: string[]) = 
     try
@@ -342,6 +368,8 @@ let main (args: string[]) =
         | [| "clean" |] ->
             clean()
             0
+        | [| "ensure-moniker"; manifestDir |] ->
+            ensureMoniker manifestDir
         | [| "msi-version"; pulumiVersion |] ->
             // Lets you check the version mapping without WiX, or Windows, in sight
             printfn "%s" (msiProductVersion pulumiVersion)

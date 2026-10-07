@@ -88,25 +88,8 @@ jobs:
           .\wingetcreate.exe update Pulumi.Pulumi --urls $downloadUrl --version $version --token $github_token --out ./winget-manifest
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-          # Give the package a `pulumi` moniker so `winget install pulumi` resolves to it
-          # directly instead of relying on a name search. `update` copies the previous
-          # version's metadata, so this only adds the line when it isn't there yet.
-          $locale = Get-ChildItem -Path ./winget-manifest -Recurse -Filter "Pulumi.Pulumi.locale.en-US.yaml" | Select-Object -First 1
-          if (!$locale) {
-            echo "Could not find the generated defaultLocale manifest"
-            exit 1
-          }
-          $lines = @(Get-Content -Path $locale.FullName)
-          if (!($lines -match '^Moniker:')) {
-            $anchor = 0..($lines.Length - 1) | Where-Object { $lines[$_] -match '^(Tags|ManifestType):' } | Select-Object -First 1
-            if ($null -eq $anchor) {
-              echo "Could not find where to add the moniker in $($locale.FullName)"
-              exit 1
-            }
-            $lines = $lines[0..($anchor - 1)] + 'Moniker: pulumi' + $lines[$anchor..($lines.Length - 1)]
-            # WriteAllLines writes UTF-8 without a BOM, matching what wingetcreate generates
-            [System.IO.File]::WriteAllLines($locale.FullName, $lines)
-          }
-          Get-Content -Path $locale.FullName
+          $manifestDir = "./winget-manifest/manifests/p/Pulumi/Pulumi/$version"
+          dotnet run --project ./src -- ensure-moniker $manifestDir
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-          .\wingetcreate.exe submit --prtitle "New version: Pulumi.Pulumi version $version" --token $github_token $locale.DirectoryName
+          .\wingetcreate.exe submit --prtitle "New version: Pulumi.Pulumi version $version" --token $github_token $manifestDir

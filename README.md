@@ -10,7 +10,8 @@ Written with F# as a dotnet console application which runs in CI.
 ```bash
 dotnet run --project ./src -- generate msi
 ```
-This generates a MSI file (windows installer) and a winget manifest file
+This generates an MSI file (Windows installer). The release workflow then publishes it and updates the winget
+manifest with [wingetcreate](https://github.com/microsoft/winget-create).
 
 > NOTE: To actually get an MSI, you need candle.exe/light.exe from WiX tools in your path. These are available in the CI
 
@@ -48,3 +49,16 @@ That includes the version shown in Add/Remove Programs. Windows normally derives
 Pulumi version over the top afterwards, by moving the standard `WriteRegistryValues` action from
 sequence 5000 to 6150 so that it runs after `RegisterProduct` at 6100. Keep that in mind before
 adding registry values to this package: they will all be written late.
+
+### Moniker
+
+The manifest gives the package the moniker `pulumi`, so `winget install pulumi` resolves straight to
+`Pulumi.Pulumi` rather than relying on a name search. `wingetcreate update` copies the previous
+version's metadata forward but has no way to set a moniker, so the release workflow saves the updated
+manifest with `--out`, runs `ensure-moniker` against it, and then submits it. `ensure-moniker` adds the
+moniker to the defaultLocale manifest if it's missing and leaves every other line of the file as is.
+
+To try it against a manifest directory:
+```bash
+dotnet run --project ./src -- ensure-moniker <path to manifest directory>
+```
