@@ -7,6 +7,7 @@
 
   <ItemGroup>
     <Compile Include="Wix.fs" />
+    <Compile Include="Manifest.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 

@@ -85,4 +85,11 @@ jobs:
           $downloadUrl = Get-Content -Path ./src/download-url.txt
           $version = Get-Content -Path ./src/version.txt
           iwr https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
-          .\wingetcreate.exe update Pulumi.Pulumi --urls $downloadUrl --version $version --token $github_token --submit
+          .\wingetcreate.exe update Pulumi.Pulumi --urls $downloadUrl --version $version --token $github_token --out ./winget-manifest
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          $manifestDir = "./winget-manifest/manifests/p/Pulumi/Pulumi/$version"
+          dotnet run --project ./src -- ensure-moniker $manifestDir
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          .\wingetcreate.exe submit --prtitle "New version: Pulumi.Pulumi version $version" --token $github_token $manifestDir
