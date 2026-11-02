@@ -299,36 +299,43 @@ let publishMsi () =
             printfn "Expected signed MSI at %s — run `generate msi` and the signing step before `publish msi`." msi
             1
         else
-            match latestMsiRelease() with
-            | Some msiRelease when version msiRelease = targetVersion ->
-                printfn "Version v%s of Pulumi MSI is already published, skipping..." targetVersion
-                0
-            | _ ->
-                printfn "Publishing asset to GitHub..."
+            let downloadUrl =
+                match latestMsiRelease() with
+                | Some msiRelease when version msiRelease = targetVersion ->
+                    printfn "Version v%s of Pulumi MSI is already published, reusing its installer..." targetVersion
+                    msiRelease.Assets
+                    |> Seq.tryFind (fun asset -> asset.Name = Path.GetFileName msi)
+                    |> function
+                        | Some asset -> asset.BrowserDownloadUrl
+                        | None -> failwithf "Release v%s is missing installer %s" targetVersion (Path.GetFileName msi)
+                | _ ->
+                    printfn "Publishing asset to GitHub..."
 
-                let msiChecksum256 = computeSha256 msi
-                let releaseInfo = NewRelease($"v{targetVersion}")
-                let msiRelease = await (github.Repository.Release.Create("pulumi", "pulumi-winget", releaseInfo))
-                let installerAsset = ReleaseAssetUpload()
-                installerAsset.FileName <- Path.GetFileName msi
-                installerAsset.ContentType <- "application/msi"
-                installerAsset.RawData <- File.OpenRead(msi)
+                    let msiChecksum256 = computeSha256 msi
+                    let releaseInfo = NewRelease($"v{targetVersion}")
+                    let msiRelease = await (github.Repository.Release.Create("pulumi", "pulumi-winget", releaseInfo))
+                    let installerAsset = ReleaseAssetUpload()
+                    installerAsset.FileName <- Path.GetFileName msi
+                    installerAsset.ContentType <- "application/msi"
+                    installerAsset.RawData <- File.OpenRead(msi)
 
-                let checksumAsset = ReleaseAssetUpload()
-                checksumAsset.FileName <- "checksum-256.txt"
-                checksumAsset.ContentType <- "text/plain"
-                checksumAsset.RawData <- new MemoryStream(Encoding.UTF8.GetBytes(msiChecksum256))
+                    let checksumAsset = ReleaseAssetUpload()
+                    checksumAsset.FileName <- "checksum-256.txt"
+                    checksumAsset.ContentType <- "text/plain"
+                    checksumAsset.RawData <- new MemoryStream(Encoding.UTF8.GetBytes(msiChecksum256))
 
-                let uploadedInstaller = await (github.Repository.Release.UploadAsset(msiRelease, installerAsset))
-                let uploadedChecksumFile = await (github.Repository.Release.UploadAsset(msiRelease, checksumAsset))
+                    let uploadedInstaller = await (github.Repository.Release.UploadAsset(msiRelease, installerAsset))
+                    let uploadedChecksumFile = await (github.Repository.Release.UploadAsset(msiRelease, checksumAsset))
 
-                printfn $"Released {targetVersion}: {uploadedInstaller.BrowserDownloadUrl}"
-                printfn $"Checksum: {uploadedChecksumFile.BrowserDownloadUrl}"
+                    printfn $"Released {targetVersion}: {uploadedInstaller.BrowserDownloadUrl}"
+                    printfn $"Checksum: {uploadedChecksumFile.BrowserDownloadUrl}"
 
-                let downloadUrlPath = resolvePath [ "download-url.txt" ]
-                File.WriteAllText(downloadUrlPath, uploadedInstaller.BrowserDownloadUrl)
-                printfn $"Written the release download URL to file {downloadUrlPath}"
-                0
+                    uploadedInstaller.BrowserDownloadUrl
+
+            let downloadUrlPath = resolvePath [ "download-url.txt" ]
+            File.WriteAllText(downloadUrlPath, downloadUrl)
+            printfn $"Written the release download URL to file {downloadUrlPath}"
+            0
 
 [<EntryPoint>]
 let main (args: string[]) = 
