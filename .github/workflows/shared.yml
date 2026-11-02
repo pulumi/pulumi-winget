@@ -77,8 +77,7 @@ jobs:
         run: |
           $download_exists = Test-Path -Path ./src/download-url.txt -PathType Leaf
           if (!$download_exists) {
-            echo "./src/download-url.txt file was not found, this means we skipped generating an installer"
-            return
+            throw "./src/download-url.txt was not found; publish msi must provide an installer URL before submitting the manifest"
           }
 
           $github_token = "${{ secrets.PULUMI_BOT_TOKEN }}"
