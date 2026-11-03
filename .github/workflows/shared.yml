@@ -81,7 +81,11 @@ jobs:
           }
 
           $github_token = "${{ secrets.PULUMI_BOT_TOKEN }}"
-          $downloadUrl = Get-Content -Path ./src/download-url.txt
+          $downloadUrls = @(Get-Content -Path ./src/download-url.txt)
           $version = Get-Content -Path ./src/version.txt
           iwr https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
-          .\wingetcreate.exe update Pulumi.Pulumi --urls $downloadUrl --version $version --token $github_token --submit
+          $manifest = .\wingetcreate.exe show Pulumi.Pulumi --installer-manifest --token $github_token | Out-String
+          if ($manifest -notmatch 'Architecture: arm64') {
+            $downloadUrls = @($downloadUrls | Where-Object { $_ -notmatch '\|arm64$' })
+          }
+          .\wingetcreate.exe update Pulumi.Pulumi --urls $downloadUrls --version $version --token $github_token --submit

@@ -119,9 +119,9 @@ let component' (id: string) (elements: obj seq) =
             yield element |> box
     })
 
-// The package is x64, so Windows Installer registers the product in the 64-bit registry view. A
-// component writing into that registration has to be 64-bit too, otherwise its values land under
-// WOW6432Node instead and the product's own values are left untouched.
+// The package is 64-bit (x64 or arm64), so Windows Installer registers the product in the 64-bit
+// registry view. A component writing into that registration has to be 64-bit too, otherwise its
+// values land under WOW6432Node instead and the product's own values are left untouched.
 let component64 (id: string) (elements: obj seq) =
     XElement.create(ns + "Component", seq {
         yield XAttribute.create("Id", id) |> box
