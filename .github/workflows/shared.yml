@@ -88,4 +88,26 @@ jobs:
           if ($manifest -notmatch 'Architecture: arm64') {
             $downloadUrls = @($downloadUrls | Where-Object { $_ -notmatch '\|arm64$' })
           }
-          .\wingetcreate.exe update Pulumi.Pulumi --urls $downloadUrls --version $version --token $github_token --submit
+          $out = Join-Path $PWD 'winget-manifest'
+          .\wingetcreate.exe update Pulumi.Pulumi --urls $downloadUrls --version $version --token $github_token --out $out
+          if ($LASTEXITCODE -ne 0) { throw "wingetcreate update failed with exit code $LASTEXITCODE" }
+
+          # The MSI installs per machine (Package/@InstallScope). wingetcreate keeps whatever scope the
+          # previous manifest declared and does not read it from the MSI, so declare it here; without it,
+          # `winget install --scope machine` finds no installer and winget does not pass ALLUSERS=1.
+          $installerManifest = Get-ChildItem -Path $out -Recurse -Filter '*.installer.yaml' | Select-Object -First 1
+          if (-not $installerManifest) { throw "wingetcreate update wrote no installer manifest under $out" }
+          $yaml = [IO.File]::ReadAllText($installerManifest.FullName)
+          if ($yaml -notmatch '(?m)^[ -]*Scope:') {
+            if ($yaml -match '(?m)^InstallerType: [^\r\n]*(\r?\n)') {
+              $yaml = $yaml -replace '(?m)^(InstallerType: [^\r\n]*)(\r?\n)', '$1$2Scope: machine$2'
+            } else {
+              $yaml = $yaml -replace '(?m)^Installers:', "Scope: machine`r`nInstallers:"
+            }
+            if ($yaml -notmatch '(?m)^Scope: machine\r?$') { throw "Could not add 'Scope: machine' to $($installerManifest.Name)" }
+            [IO.File]::WriteAllText($installerManifest.FullName, $yaml, (New-Object System.Text.UTF8Encoding $false))
+          }
+          Get-Content -Path $installerManifest.FullName
+
+          .\wingetcreate.exe submit --token $github_token --prtitle "New version: Pulumi.Pulumi version $version" --no-open $installerManifest.DirectoryName
+          if ($LASTEXITCODE -ne 0) { throw "wingetcreate submit failed with exit code $LASTEXITCODE" }

@@ -215,6 +215,11 @@ let buildMsi (pulumiVersion: string) (msiVersion: string) (arch: Architecture) (
                 Wix.attr "Description" "Pulumi CLI for managing cloud infrastructure"
                 Wix.attr "InstallerVersion" arch.InstallerVersion
                 Wix.attr "Compressed" "yes"
+                // The package installs into Program Files and writes the system PATH, so it is a
+                // per-machine install. Without InstallScope, ALLUSERS stays unset and Windows Installer
+                // registers the product for the user who ran it: another account, or winget running as
+                // another administrator, then cannot upgrade or uninstall it (error 1605).
+                Wix.attr "InstallScope" "perMachine"
             ]
 
             // Tells the installer to embed all source files
